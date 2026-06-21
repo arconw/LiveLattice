@@ -1,0 +1,82 @@
+graph TD
+    subgraph Ingress["Ingress"]
+        LOGIN["POST /auth/login"]
+        SOCIAL["POST /auth/social"]
+        REFRESH["POST /auth/refresh"]
+        API_KEY["X-API-Key Request"]
+        MFA_SETUP["POST /auth/mfa/setup"]
+    end
+
+    subgraph Gateway["Gateway (NestJS)"]
+        AUTH_CONTROLLER["AuthController"]
+        KEYCLOAK_CLIENT["Keycloak OIDC Client"]
+        API_KEY_CACHE["API Key Cache (Redis)"]
+        TOKEN_DENY["Token Deny List (Redis)"]
+        JWT_GUARD["JWT Guard"]
+    end
+
+    subgraph Keycloak["Identity Provider"]
+        KC_TOKEN["Token Endpoint"]
+        KC_USERINFO["Userinfo Endpoint"]
+        KC_ADMIN["Admin API"]
+        KC_JWKS["JWKS Endpoint"]
+    end
+
+    subgraph Bridge["Auth Bridge (Spring Boot)"]
+        USER_PROV["User Provisioning"]
+        ROLE_SYNC["Role Sync"]
+        MFA_SVC["MFA Service"]
+    end
+
+    subgraph Storage["Storage"]
+        PG[("PostgreSQL<br/>Keycloak DB")]
+        REDIS[("Redis<br/>Sessions + API Keys")]
+        APP_PG[("PostgreSQL<br/>App DB")]
+    end
+
+    subgraph Outbound["Outbound"]
+        TOKENS["{ accessToken, refreshToken, user }"]
+        KEY_RESP["API Key Created"]
+    end
+
+    subgraph Errors["Error Handling"]
+        INVALID_CRED["Invalid Credentials (401)"]
+        RATE_LIMIT["Rate Limited (429)"]
+        EXPIRED_TOKEN["Token Expired (401)"]
+        REVOKED_TOKEN["Token Revoked (401)"]
+    end
+
+    subgraph Observability["Observability"]
+        AUTH_METRICS["login_attempts_total<br/>login_success_total"]
+        TRACES["OTLP Traces"]
+    end
+
+    LOGIN --> AUTH_CONTROLLER
+    SOCIAL --> AUTH_CONTROLLER
+    REFRESH --> AUTH_CONTROLLER
+    AUTH_CONTROLLER -->|rate limit| RATE_LIMIT
+    AUTH_CONTROLLER --> KEYCLOAK_CLIENT
+    KEYCLOAK_CLIENT --> KC_TOKEN
+    KC_TOKEN --> KC_JWKS
+    KC_JWKS --> TOKENS
+    KEYCLOAK_CLIENT -->|provision| USER_PROV
+    USER_PROV --> APP_PG
+
+    API_KEY --> API_KEY_CACHE
+    API_KEY_CACHE -->|miss| APP_PG
+    API_KEY_CACHE --> KEY_RESP
+
+    MFA_SETUP --> MFA_SVC
+    MFA_SVC --> KC_ADMIN
+
+    REFRESH --> TOKEN_DENY
+    TOKEN_DENY -->|revoked| REVOKED_TOKEN
+    TOKEN_DENY -->|valid| TOKENS
+
+    JWT_GUARD -->|expired| EXPIRED_TOKEN
+    JWT_GUARD -->|denied| REVOKED_TOKEN
+    KEYCLOAK_CLIENT -->|wrong password| INVALID_CRED
+
+    AUTH_CONTROLLER -.-> AUTH_METRICS
+    KEYCLOAK_CLIENT -.-> TRACES
+    USER_PROV -.-> TRACES

@@ -1,0 +1,100 @@
+graph TD
+    subgraph Init["docker compose up"]
+        COMPOSE["compose.yaml"]
+        ENV[".env"]
+        SECRETS["./secrets/*.txt"]
+    end
+
+    subgraph Infra["Infrastructure Services"]
+        PG[("PostgreSQL :5432")]
+        REDIS[("Redis :6379")]
+        ZK["Zookeeper :2181"]
+        KAFKA["Kafka :9092"]
+        CH[("ClickHouse :8123")]
+        OS[("OpenSearch :9200")]
+        MINIO[("MinIO :9000")]
+        KC["Keycloak :8080"]
+    end
+
+    subgraph Observability["Observability Stack"]
+        OTel["OTel Collector :4317"]
+        PROM["Prometheus :9090"]
+        GRAF["Grafana :4000"]
+        LOKI["Loki :3100"]
+        TEMPO["Tempo :3200"]
+    end
+
+    subgraph AppServices["Application Services"]
+        GW["Gateway<br/>:3000 / :3001"]
+        RT["Realtime<br/>:3002"]
+        CORE["Core Domain<br/>:8080"]
+        SEARCH["Search<br/>:8081"]
+        NOTIFY["Notifications<br/>:8082"]
+        IMPORT["Import/Export<br/>:8083"]
+        AUDIT["Audit Log<br/>:8084"]
+        JOBS["Background Jobs<br/>:8085"]
+    end
+
+    subgraph Volumes["Persistent Volumes"]
+        V_PG["pgdata"]
+        V_REDIS["redis_data"]
+        V_KAFKA["kafka_data"]
+        V_CH["clickhouse_data"]
+        V_OS["opensearch_data"]
+        V_MINIO["minio_data"]
+    end
+
+    subgraph Outbound["Entry Points"]
+        REST_API["REST API<br/>http://localhost:3000"]
+        WS_CONN["WebSocket<br/>ws://localhost:3001"]
+        GRAFANA_UI["Grafana<br/>http://localhost:4000"]
+        MINIO_UI["MinIO Console<br/>http://localhost:9001"]
+    end
+
+    COMPOSE --> ENV
+    COMPOSE --> SECRETS
+    COMPOSE --> Infra
+    COMPOSE --> AppServices
+
+    ZK --> KAFKA
+    PG --> V_PG
+    REDIS --> V_REDIS
+    KAFKA --> V_KAFKA
+    CH --> V_CH
+    OS --> V_OS
+    MINIO --> V_MINIO
+
+    PG --> GW
+    PG --> CORE
+    PG --> NOTIFY
+    PG --> AUDIT
+    REDIS --> GW
+    REDIS --> RT
+    REDIS --> CORE
+    REDIS --> JOBS
+    KAFKA --> GW
+    KAFKA --> RT
+    KAFKA --> CORE
+    KAFKA --> SEARCH
+    KAFKA --> NOTIFY
+    KAFKA --> IMPORT
+    KAFKA --> AUDIT
+    KAFKA --> JOBS
+    OS --> SEARCH
+    MINIO --> IMPORT
+    KC --> GW
+
+    COMPOSE --> Observability
+    GW --> OTel
+    RT --> OTel
+    CORE --> OTel
+    OTel --> PROM
+    OTel --> LOKI
+    OTel --> TEMPO
+    PROM --> GRAF
+    TEMPO --> GRAF
+
+    GW --> REST_API
+    GW --> WS_CONN
+    GRAF --> GRAFANA_UI
+    MINIO --> MINIO_UI

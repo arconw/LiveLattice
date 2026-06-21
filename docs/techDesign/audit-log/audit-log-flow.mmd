@@ -1,0 +1,81 @@
+graph TD
+    subgraph Ingress["Ingress"]
+        KAFKA_EVENTS["Kafka Domain Events"]
+        QUERY["GET /audit-log?filters"]
+        VERIFY["GET /audit-log/verify"]
+        EXPORT["POST /audit-log/export"]
+    end
+
+    subgraph AuditLog["Audit Log Service (Spring Boot)"]
+        AUDIT_CONSUMER["AuditLogConsumer"]
+        HASH_CHAIN["Hash Chain Builder"]
+        AUDIT_REPO["AuditEvent Repository"]
+        AUDIT_CTRL["AuditController"]
+        VERIFY_SVC["Chain Verification Service"]
+        EXPORT_SVC["Export Service"]
+        PARTITION_MGR["Partition Manager"]
+    end
+
+    subgraph Storage["Storage"]
+        PG[("PostgreSQL<br/>Partitioned audit_events")]
+        MINIO[("MinIO<br/>Parquet archives")]
+        REDIS[("Redis<br/>export job status")]
+    end
+
+    subgraph Outbound["Outbound"]
+        EVENT_LIST["{ events, total, page }"]
+        VERIFY_RESULT["{ valid, firstInvalidId, message }"]
+        EXPORT_JOB["{ jobId, status }"]
+        EXPORT_DOWNLOAD["Parquet/CSV File"]
+    end
+
+    subgraph Errors["Error Handling"]
+        PARTITION_ERR["Partition Error"]
+        VERIFY_FAIL["Chain Integrity Breach!"]
+    end
+
+    subgraph Observability["Observability"]
+        METRICS["audit_events_total<br/>hash_chain_length<br/>partition_size"]
+        TRACES["OTLP Traces"]
+    end
+
+    subgraph Retention["Retention Job (cron)"]
+        CRON_JOB["Nightly Cron"]
+        DETACH["Detach Old Partitions"]
+        EXPORT_PARQUET["Export to Parquet -> MinIO"]
+        DROP_PARTITION["Drop from PostgreSQL"]
+    end
+
+    KAFKA_EVENTS --> AUDIT_CONSUMER
+    AUDIT_CONSUMER --> HASH_CHAIN
+    HASH_CHAIN -->|compute hash| HASH_CHAIN
+    HASH_CHAIN --> AUDIT_REPO
+    AUDIT_REPO --> PG
+
+    QUERY --> AUDIT_CTRL
+    AUDIT_CTRL --> AUDIT_REPO
+    AUDIT_REPO --> PG
+    AUDIT_CTRL --> EVENT_LIST
+
+    VERIFY --> AUDIT_CTRL
+    AUDIT_CTRL --> VERIFY_SVC
+    VERIFY_SVC --> PG
+    VERIFY_SVC -->|chain valid| VERIFY_RESULT
+    VERIFY_SVC -->|chain broken| VERIFY_FAIL
+
+    EXPORT --> AUDIT_CTRL
+    AUDIT_CTRL --> EXPORT_SVC
+    EXPORT_SVC -->|async| MINIO
+    EXPORT_SVC --> REDIS
+    EXPORT_SVC --> EXPORT_JOB
+
+    CRON_JOB --> PARTITION_MGR
+    PARTITION_MGR --> DETACH
+    DETACH --> EXPORT_PARQUET
+    EXPORT_PARQUET --> MINIO
+    EXPORT_PARQUET --> DROP_PARTITION
+    DROP_PARTITION --> PG
+
+    AUDIT_CONSUMER -.-> METRICS
+    AUDIT_REPO -.-> TRACES
+    VERIFY_SVC -.-> METRICS

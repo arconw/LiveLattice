@@ -1,0 +1,89 @@
+graph TD
+    subgraph Ingress["Ingress"]
+        IMPORT["POST /import<br/>(multipart file)"]
+        EXPORT["POST /export/:canvasId<br/>?format=svg"]
+        BATCH_IMPORT["POST /batch/import<br/>(zip)"]
+        BATCH_EXPORT["POST /batch/export<br/>(zip)"]
+        JOB_POLL["GET /export/jobs/:jobId"]
+        DOWNLOAD["GET /export/jobs/:jobId/download"]
+    end
+
+    subgraph ImportExport["Import/Export Service (Spring Boot)"]
+        IMPORT_CTRL["ImportController"]
+        EXPORT_CTRL["ExportController"]
+        FILE_VALID["FileValidator<br/>(magic bytes + ClamAV)"]
+        FORMAT_TRANS["FormatTransformer"]
+        BATCH_MGR["BatchJobManager"]
+        STREAM_SVC["StreamingService"]
+        JOB_TRACKER["Job Tracker (Redis)"]
+    end
+
+    subgraph Storage["Storage"]
+        MINIO[("MinIO<br/>staging / archive / assets")]
+        PG[("PostgreSQL<br/>canvas data")]
+        REDIS[("Redis<br/>job status")]
+    end
+
+    subgraph Async["Async Processing"]
+        KAFKA_IMPORT["Kafka: import.jobs"]
+        KAFKA_EXPORT["Kafka: export.jobs"]
+        WORKER["Background Worker<br/>(large file processing)"]
+    end
+
+    subgraph Outbound["Outbound"]
+        SYNC_RESP["Sync Response<br/>{ canvasId, url }"]
+        ASYNC_RESP["Async Response<br/>{ jobId, status }"]
+        FILE_STREAM["File Stream<br/>(chunked)"]
+        NOTIFY_EVENT["Notification Event<br/>job.completed"]
+    end
+
+    subgraph Errors["Error Handling"]
+        SIZE_ERR["File Too Large (413)"]
+        TYPE_ERR["Unsupported Format (422)"]
+        VIRUS_ERR["Malware Detected (422)"]
+        JOB_ERR["Job Failed"]
+    end
+
+    subgraph Observability["Observability"]
+        METRICS["import_duration_ms<br/>export_size_bytes<br/>transform_duration_ms"]
+        TRACES["OTLP Traces"]
+    end
+
+    IMPORT --> IMPORT_CTRL
+    IMPORT_CTRL --> FILE_VALID
+    FILE_VALID -->|size exceeded| SIZE_ERR
+    FILE_VALID -->|unknown type| TYPE_ERR
+    FILE_VALID -->|virus| VIRUS_ERR
+    FILE_VALID -->|valid| MINIO
+    FILE_VALID -->|valid & small| FORMAT_TRANS
+    FORMAT_TRANS --> PG
+    FORMAT_TRANS --> SYNC_RESP
+    FILE_VALID -->|valid & large| KAFKA_IMPORT
+    KAFKA_IMPORT --> WORKER
+    WORKER --> MINIO
+    WORKER --> PG
+    WORKER --> ASYNC_RESP
+    WORKER --> NOTIFY_EVENT
+
+    EXPORT --> EXPORT_CTRL
+    EXPORT_CTRL --> PG
+    EXPORT_CTRL -->|small| FORMAT_TRANS
+    FORMAT_TRANS --> FILE_STREAM
+    EXPORT_CTRL -->|large| KAFKA_EXPORT
+    KAFKA_EXPORT --> WORKER
+    WORKER --> MINIO
+    WORKER --> JOB_TRACKER
+    JOB_POLL --> JOB_TRACKER
+    DOWNLOAD --> MINIO
+    JOB_TRACKER --> ASYNC_RESP
+    JOB_TRACKER -->|failed| JOB_ERR
+
+    BATCH_IMPORT --> BATCH_MGR
+    BATCH_EXPORT --> BATCH_MGR
+    BATCH_MGR --> KAFKA_IMPORT
+    BATCH_MGR --> KAFKA_EXPORT
+
+    IMPORT_CTRL -.-> METRICS
+    EXPORT_CTRL -.-> METRICS
+    FORMAT_TRANS -.-> METRICS
+    WORKER -.-> TRACES

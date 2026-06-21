@@ -1,0 +1,84 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+.yarn/
+.gradle/
+.m2/repository/
+
+# Build outputs
+dist/
+build/
+out/
+target/
+coverage/
+.nyc_output/
+.tmp/
+tmp/
+.cache/
+.parcel-cache/
+.vite/
+.next/
+
+# Runtime artifacts
+logs/
+*.log
+*.pid
+*.seed
+*.pid.lock
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.local
+secrets/
+*.pem
+*.key
+*.crt
+
+# Docker and local volumes
+.docker-data/
+docker-data/
+volumes/
+.minio/
+.pgdata/
+.redis/
+.clickhouse/
+.opensearch/
+
+# Agent and AI tool artifacts
+.agent-tasks/
+.codex/
+.opencode/
+.openhands/
+.aider*
+.cursor/
+.claude/
+.config/
+.local/
+.npm/
+*.codex.patch
+*.opencode.patch
+*.session.json
+*.session.log
+
+# Test and load artifacts
+test-results/
+playwright-report/
+blob-report/
+k6-results/
+reports/
+
+# IDE and OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Generated diagrams and exports
+*.png
+*.pdf
+!docs/**/*.pdf
+!docs/**/*.png
