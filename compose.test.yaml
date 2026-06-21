@@ -1,0 +1,17 @@
+name: livelattice-test
+
+services:
+  postgres-test:
+    image: postgres:18.1-alpine
+    environment:
+      POSTGRES_DB: livelattice_test
+      POSTGRES_USER: livelattice
+      POSTGRES_PASSWORD: livelattice_test_password
+    ports:
+      - "15432:5432"
+    networks:
+      - livelattice-test
+
+networks:
+  livelattice-test:
+    name: livelattice_test

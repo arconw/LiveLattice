@@ -1,0 +1,3 @@
+# Core domain
+
+Backend placeholder.

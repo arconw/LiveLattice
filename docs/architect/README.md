@@ -12,6 +12,7 @@ LiveLattice architecture is split into three tiers: a Node.js (NestJS) gateway a
 | [Realtime Collaboration](realtime/realtime-collaboration.md) | WebSocket rooms, OT/CRDT, presence, broadcasting |
 | [Testing Strategy](testing/testing-strategy.md) | Unit, integration, contract, E2E, performance |
 | [Deployment & CI](infra/deployment-and-ci.md) | Docker Compose, monorepo, versioning, pipelines |
+| [Local Docker Compose Stack](infra/local-dev-compose.md) | Local containers, health checks, placeholder services, environment files |
 | [Performance & Observability](operations/performance-observability.md) | OpenTelemetry, metrics, traces, logs, profiling |
 
 ## Cross-Cutting Concerns
