@@ -63,18 +63,18 @@ Collaborative diagrams, dashboards, charts, and real-time data integrations - ba
 ### Quick Start
 
 ```bash
-# Clone and start all services
+cp .env.example .env
 docker compose up -d
-
-# Check status
 docker compose ps
-
-# Start observability stack (optional)
 docker compose -f compose.observability.yaml up -d
-
-# Open Grafana
-open http://localhost:4000
 ```
+
+Local stack entry points:
+
+- `compose.yaml` - infrastructure plus backend placeholder containers.
+- `compose.observability.yaml` - OpenTelemetry Collector, Prometheus, Grafana, Loki, Tempo.
+- `compose.test.yaml` - lightweight test dependencies with offset ports.
+- `.env.example` - documented local environment template.
 
 ## Documentation
 
@@ -87,6 +87,7 @@ open http://localhost:4000
 | [Realtime Collaboration](docs/architect/realtime/realtime-collaboration.md) | WebSocket, CRDT, presence, broadcasting |
 | [Testing Strategy](docs/architect/testing/testing-strategy.md) | Unit, integration, E2E, performance test approach |
 | [Deployment & CI](docs/architect/infra/deployment-and-ci.md) | Monorepo, Docker Compose, versioning, CI pipeline |
+| [Local Docker Compose Stack](docs/architect/infra/local-dev-compose.md) | Local containers, health checks, environment files |
 | [Performance & Observability](docs/architect/operations/performance-observability.md) | Metrics, traces, logs, dashboards, alerting |
 
 ### Technical Designs

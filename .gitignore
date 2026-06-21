@@ -28,10 +28,14 @@ logs/
 
 # Environment and secrets
 .env
-.env.*
-!.env.example
+.env.local
+.env.development
+.env.production
+.env.test
 *.local
-secrets/
+secrets/*
+!secrets/.gitkeep
+!secrets/README.md
 *.pem
 *.key
 *.crt
@@ -45,6 +49,7 @@ volumes/
 .redis/
 .clickhouse/
 .opensearch/
+.elasticsearch/
 
 # Agent and AI tool artifacts
 .agent-tasks/
