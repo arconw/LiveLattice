@@ -1,0 +1,80 @@
+graph TD
+    subgraph Ingress["Ingress"]
+        REST["HTTP Request<br/>(from Gateway)"]
+        KAFKA_EVENTS["Kafka Event<br/>(from other services)"]
+    end
+
+    subgraph Core["Core Domain (Spring Boot)"]
+        CONTROLLER["REST Controller"]
+        CMD_BUS["CommandBus"]
+        QRY_BUS["QueryBus"]
+        CMD_HANDLER["Command Handler"]
+        QRY_HANDLER["Query Handler"]
+        DOMAIN_SVC["Domain Service"]
+        VALIDATOR["Bean Validator"]
+        REPO_WRITE["Repository (write)"]
+        REPO_READ["Repository (read)"]
+        EVENT_PUB["Event Publisher"]
+        DOMAIN_EVENT["Domain Event"]
+    end
+
+    subgraph Storage["Storage"]
+        PG[("PostgreSQL<br/>primary")]
+        PG_REPLICA[("PostgreSQL<br/>replica")]
+        REDIS_CACHE[("Redis Cache")]
+    end
+
+    subgraph Outbound["Outbound"]
+        RESP["HTTP Response"]
+        KAFKA_OUT["Kafka: domain.events"]
+    end
+
+    subgraph Errors["Error Handling"]
+        VALIDATION_ERR["Validation Exception<br/>(422)"]
+        CONCURRENT_ERR["Optimistic Lock<br/>(409)"]
+        NOT_FOUND["Not Found (404)"]
+        FORBIDDEN["Forbidden (403)"]
+        GLOBAL_ERR["Global Exception Handler"]
+    end
+
+    subgraph Observability["Observability"]
+        TRACES["OTLP Traces -> Tempo"]
+        METRICS["Micrometer -> Prometheus"]
+        SQL_LOGGING["Slow Query Log (>100ms)"]
+    end
+
+    REST --> CONTROLLER
+    CONTROLLER -->|POST/PUT/PATCH/DELETE| CMD_BUS
+    CONTROLLER -->|GET| QRY_BUS
+    KAFKA_EVENTS --> CMD_BUS
+    CMD_BUS --> VALIDATOR
+    VALIDATOR --> CMD_HANDLER
+    CMD_HANDLER --> DOMAIN_SVC
+    DOMAIN_SVC --> REPO_WRITE
+    REPO_WRITE --> PG
+    DOMAIN_SVC --> DOMAIN_EVENT
+    DOMAIN_EVENT --> EVENT_PUB
+    EVENT_PUB --> KAFKA_OUT
+    QRY_BUS --> QRY_HANDLER
+    QRY_HANDLER --> REPO_READ
+    REPO_READ --> PG_REPLICA
+    REPO_READ --> REDIS_CACHE
+    QRY_HANDLER --> RESP
+    CMD_HANDLER --> RESP
+
+    VALIDATOR -->|invalid| VALIDATION_ERR
+    DOMAIN_SVC -->|not found| NOT_FOUND
+    DOMAIN_SVC -->|no permission| FORBIDDEN
+    REPO_WRITE -->|version conflict| CONCURRENT_ERR
+    CONCURRENT_ERR --> GLOBAL_ERR
+    VALIDATION_ERR --> GLOBAL_ERR
+    NOT_FOUND --> GLOBAL_ERR
+    FORBIDDEN --> GLOBAL_ERR
+    GLOBAL_ERR --> RESP
+
+    CONTROLLER -.-> TRACES
+    CMD_HANDLER -.-> TRACES
+    REPO_WRITE -.-> SQL_LOGGING
+    REPO_READ -.-> SQL_LOGGING
+    SQL_LOGGING -.-> TRACES
+    METRICS -.->|http_requests_total, db_query_duration_ms| PROM_METRICS

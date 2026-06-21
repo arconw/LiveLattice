@@ -1,0 +1,86 @@
+graph TD
+    subgraph Ingress["Ingress"]
+        DASH_CRUD["Dashboard CRUD (REST)"]
+        WIDGET_CRUD["Widget CRUD (REST)"]
+        DASH_DATA["GET /dashboards/:id/data"]
+        WIDGET_DATA["GET /widgets/:wid/data"]
+        DS_CRUD["Data Source CRUD"]
+        DS_TEST["POST /data-sources/:id/test"]
+    end
+
+    subgraph Analytics["Dashboard & Analytics (Spring Boot)"]
+        DASH_CTRL["DashboardController"]
+        DASH_SVC["DashboardService"]
+        WIDGET_SVC["WidgetService"]
+        DS_SVC["DataSourceService"]
+        QUERY_ENG["Query Engine"]
+        QUERY_CACHE["Query Result Cache (Redis)"]
+        QUERY_TRANS["Query Transformer"]
+        QUERY_EXEC["Query Executor"]
+        RESULT_MERGE["Result Merger"]
+    end
+
+    subgraph DataSources["Data Sources"]
+        CH[("ClickHouse<br/>Analytics DB")]
+        PG_ANALYTICS[("PostgreSQL<br/>(read replica)")]
+        PROM_SRC[("Prometheus<br/>Metrics)")]
+        EXT_API["External REST API"]
+    end
+
+    subgraph Storage["Storage"]
+        PG[("PostgreSQL<br/>dashboards, widgets")]
+        REDIS[("Redis<br/>query cache")]
+    end
+
+    subgraph Outbound["Outbound"]
+        DASH_RESP["Dashboard with Widgets"]
+        FULL_DATA["{ widgets: [{ id, data, error }] }"]
+        DS_RESP["Data Source Config"]
+    end
+
+    subgraph Errors["Error Handling"]
+        DS_CONN_ERR["Data Source Connection Error"]
+        QUERY_TIMEOUT["Query Timeout"]
+        INVALID_DSL["Invalid Query DSL (422)"]
+    end
+
+    subgraph Observability["Observability"]
+        QUERY_METRICS["query_duration_ms<br/>rows_returned"]
+        CACHE_METRICS["cache_hit_ratio"]
+        TRACES["OTLP Traces -> Tempo"]
+    end
+
+    DASH_CRUD --> DASH_CTRL
+    WIDGET_CRUD --> DASH_CTRL
+    DASH_CTRL --> DASH_SVC
+    DASH_SVC --> PG
+    DASH_SVC --> WIDGET_SVC
+    WIDGET_SVC --> PG
+
+    DS_CRUD --> DASH_CTRL
+    DS_TEST --> DS_SVC
+    DS_SVC --> PG
+
+    DASH_DATA --> DASH_CTRL
+    WIDGET_DATA --> DASH_CTRL
+    DASH_CTRL --> QUERY_ENG
+    QUERY_ENG --> QUERY_CACHE
+    QUERY_CACHE -->|hit| RESULT_MERGE
+    QUERY_CACHE -->|miss| QUERY_TRANS
+    QUERY_TRANS --> DS_SVC
+    DS_SVC --> QUERY_EXEC
+    QUERY_EXEC --> CH
+    QUERY_EXEC --> PG_ANALYTICS
+    QUERY_EXEC --> PROM_SRC
+    QUERY_EXEC --> EXT_API
+    QUERY_EXEC --> QUERY_CACHE
+    QUERY_EXEC --> RESULT_MERGE
+    RESULT_MERGE --> FULL_DATA
+
+    QUERY_EXEC -->|connection failed| DS_CONN_ERR
+    QUERY_EXEC -->|timeout| QUERY_TIMEOUT
+    QUERY_TRANS -->|bad DSL| INVALID_DSL
+
+    QUERY_ENG -.-> QUERY_METRICS
+    QUERY_CACHE -.-> CACHE_METRICS
+    QUERY_EXEC -.-> TRACES

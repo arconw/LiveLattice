@@ -1,0 +1,74 @@
+graph TD
+    subgraph Ingress["Ingress"]
+        WS_CONN["WebSocket Connect<br/>/ws?token=JWT"]
+        OP_MSG["canvas:op"]
+        AWARE_MSG["awareness:update"]
+        JOIN_MSG["join:room {canvas_id}"]
+    end
+
+    subgraph Realtime["Realtime Service (NestJS/Socket.IO)"]
+        AUTH_GUARD["Auth Guard<br/>(JWT -> workspace_id)"]
+        ROOM_MGR["Room Manager<br/>(Redis-backed)"]
+        COLLAB["Collaboration Engine<br/>(Yjs CRDT)"]
+        PRESENCE["Presence Service"]
+        BROADCAST["Broadcast Service"]
+        OPS_BUF["Op Buffer<br/>(50ms / 50 ops)"]
+    end
+
+    subgraph Storage["Storage & Messaging"]
+        REDIS_PUBSUB["Redis Pub/Sub<br/>(cross-instance)"]
+        KAFKA_OPS["Kafka: canvas.ops"]
+        PG_SNAPSHOT[("PostgreSQL<br/>snapshot metadata")]
+        MINIO_SNAPSHOT[("MinIO<br/>snapshot binary")]
+    end
+
+    subgraph Outbound["Outbound"]
+        ACK["canvas:ack"]
+        OP_BROADCAST["canvas:op (to others)"]
+        AWARE_BROADCAST["awareness:state"]
+        ROOM_EVENTS["room:join / room:leave"]
+    end
+
+    subgraph Errors["Error Handling"]
+        AUTH_ERR["Auth Error<br/>(disconnect)"]
+        VALID_ERR["Validation Error<br/>(bad op format)"]
+        BACKPRESSURE["Backpressure<br/>(too many ops)"]
+    end
+
+    subgraph Observability["Observability"]
+        WS_METRICS["ws_connections_active<br/>ws_messages_total"]
+        OP_LATENCY["op_latency histogram"]
+        TRACES["OTLP Traces"]
+    end
+
+    WS_CONN --> AUTH_GUARD
+    AUTH_GUARD -->|success| ROOM_MGR
+    AUTH_GUARD -->|fail| AUTH_ERR
+
+    JOIN_MSG --> ROOM_MGR
+    ROOM_MGR -->|load snapshot| PG_SNAPSHOT
+    ROOM_MGR -->|load snapshot| MINIO_SNAPSHOT
+    ROOM_MGR --> COLLAB
+
+    OP_MSG --> COLLAB
+    COLLAB --> BROADCAST
+    BROADCAST --> REDIS_PUBSUB
+    REDIS_PUBSUB --> BROADCAST
+    BROADCAST --> OP_BROADCAST
+    COLLAB --> OPS_BUF
+    OPS_BUF --> KAFKA_OPS
+    COLLAB --> ACK
+
+    AWARE_MSG --> PRESENCE
+    PRESENCE --> AWARE_BROADCAST
+
+    ROOM_MGR --> ROOM_EVENTS
+
+    COLLAB -->|bad op| VALID_ERR
+    COLLAB -->|too fast| BACKPRESSURE
+    BACKPRESSURE -->|slow down signal| OP_BROADCAST
+
+    AUTH_GUARD -.-> WS_METRICS
+    COLLAB -.-> OP_LATENCY
+    BROADCAST -.-> TRACES
+    KAFKA_OPS -.-> TRACES

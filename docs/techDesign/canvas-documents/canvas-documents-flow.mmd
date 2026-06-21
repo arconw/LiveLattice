@@ -1,0 +1,76 @@
+graph TD
+    subgraph Ingress["Ingress"]
+        CANVAS_CRUD["Canvas CRUD (REST)"]
+        CANVAS_OP["Canvas Operation (WebSocket)"]
+        COMMENT_CRUD["Comment CRUD (REST)"]
+        HISTORY_GET["GET /history/:version"]
+        DUPLICATE["POST /duplicate"]
+    end
+
+    subgraph CanvasDomain["Canvas Domain (Spring Boot)"]
+        CANVAS_CTRL["CanvasController"]
+        CANVAS_SVC["CanvasService"]
+        COMMENT_SVC["CommentService"]
+        SNAPSHOT_MGR["SnapshotManager"]
+        TEMPLATE_SVC["TemplateService"]
+        CONTENT_STORE["ContentStore"]
+    end
+
+    subgraph Realtime["Realtime (NestJS)"]
+        COLLAB_ENG["Collaboration Engine"]
+        SNAPSHOT_TRIG["Snapshot Trigger<br/>(50 ops / 30s)"]
+    end
+
+    subgraph Storage["Storage"]
+        PG[("PostgreSQL<br/>canvas metadata, comments")]
+        MINIO[("MinIO<br/>Yjs snapshots")]
+        REDIS[("Redis<br/>hot documents")]
+    end
+
+    subgraph Outbound["Outbound Events"]
+        KAFKA_EVENTS["Kafka<br/>CanvasCreated<br/>CanvasUpdated<br/>CanvasDeleted<br/>CommentAdded"]
+    end
+
+    subgraph Errors["Error Handling"]
+        VERSION_CONFLICT["Version Conflict (409)"]
+        NOT_FOUND["Not Found (404)"]
+        VALIDATION["Validation Error (422)"]
+    end
+
+    subgraph Observability["Observability"]
+        TRACES["OTLP Traces"]
+        METRICS["canvas_load_duration<br/>snapshot_size_bytes"]
+    end
+
+    CANVAS_CRUD --> CANVAS_CTRL
+    DUPLICATE --> CANVAS_CTRL
+    HISTORY_GET --> CANVAS_CTRL
+    CANVAS_CTRL --> CANVAS_SVC
+    CANVAS_SVC --> CONTENT_STORE
+    CONTENT_STORE --> PG
+    CONTENT_STORE --> MINIO
+    CANVAS_SVC --> KAFKA_EVENTS
+
+    CANVAS_OP --> COLLAB_ENG
+    COLLAB_ENG --> SNAPSHOT_TRIG
+    SNAPSHOT_TRIG -->|snapshot| MINIO
+    SNAPSHOT_TRIG -->|metadata| PG
+    COLLAB_ENG -->|update| REDIS
+    COLLAB_ENG --> KAFKA_EVENTS
+
+    COMMENT_CRUD --> CANVAS_CTRL
+    CANVAS_CTRL --> COMMENT_SVC
+    COMMENT_SVC --> PG
+    COMMENT_SVC --> KAFKA_EVENTS
+
+    TEMPLATE_SVC --> REDIS
+    TEMPLATE_SVC --> PG
+
+    CANVAS_SVC -->|version mismatch| VERSION_CONFLICT
+    CONTENT_STORE -->|no snapshot| NOT_FOUND
+    COMMENT_SVC -->|invalid| VALIDATION
+
+    CANVAS_CTRL -.-> TRACES
+    COLLAB_ENG -.-> TRACES
+    CONTENT_STORE -.-> METRICS
+    SNAPSHOT_TRIG -.-> METRICS

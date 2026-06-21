@@ -1,0 +1,99 @@
+graph TD
+    subgraph Ingress["Ingress"]
+        JOB_CREATE["POST /jobs/export"]
+        JOB_POLL["GET /jobs/:jobId"]
+        JOB_CANCEL["POST /jobs/:jobId/cancel"]
+        CRON_TRIGGER["Cron Trigger<br/>(@Scheduled)"]
+    end
+
+    subgraph BackgroundJobs["Background Jobs (Spring Boot)"]
+        JOB_CTRL["JobController"]
+        JOB_SVC["JobService"]
+        JOB_QUEUE["Job Queue<br/>(Redis List)"]
+        WORKER_POOL["Worker Pool<br/>(per-type concurrency)"]
+        RETRY_MGR["Retry Manager"]
+        DEAD_LETTER["Dead Letter Queue"]
+        JOB_REPO["Job Repository"]
+        PROGRESS_TRACKER["Progress Tracker"]
+    end
+
+    subgraph Workers["Job Handlers"]
+        EXPORT_WORKER["ExportWorker"]
+        IMPORT_WORKER["ImportWorker"]
+        CLEANUP_WORKER["CleanupWorker"]
+        DIGEST_WORKER["DigestWorker"]
+        COMPACTION_WORKER["SnapshotCompactionWorker"]
+        RECONCILE_WORKER["QuotaReconcileWorker"]
+    end
+
+    subgraph Storage["Storage"]
+        PG[("PostgreSQL<br/>job_definitions + executions")]
+        REDIS[("Redis<br/>queue + progress")]
+        MINIO[("MinIO<br/>job output artifacts")]
+    end
+
+    subgraph Outbound["Outbound"]
+        JOB_STATUS["{ jobId, status, progress }"]
+        JOB_RESULT["{ resultUrl, completedAt }"]
+        NOTIF_EVENT["Notification Event<br/>job.completed"]
+    end
+
+    subgraph Errors["Error Handling"]
+        EXEC_ERR["Execution Error"]
+        RETRY_EXCEEDED["Max Retries Exceeded"]
+        CANCEL_ERR["Cancellation Error"]
+        TIMEOUT_ERR["Execution Timeout"]
+    end
+
+    subgraph Observability["Observability"]
+        METRICS["jobs_queued_total<br/>jobs_completed_total<br/>jobs_failed_total<br/>queue_depth"]
+        TRACES["OTLP Traces"]
+    end
+
+    JOB_CREATE --> JOB_CTRL
+    JOB_CTRL --> JOB_SVC
+    JOB_SVC --> PG
+    JOB_SVC --> JOB_QUEUE
+    JOB_SVC --> JOB_STATUS
+
+    CRON_TRIGGER --> JOB_SVC
+    JOB_SVC --> JOB_QUEUE
+
+    JOB_QUEUE --> WORKER_POOL
+    WORKER_POOL --> EXPORT_WORKER
+    WORKER_POOL --> IMPORT_WORKER
+    WORKER_POOL --> CLEANUP_WORKER
+    WORKER_POOL --> DIGEST_WORKER
+    WORKER_POOL --> COMPACTION_WORKER
+    WORKER_POOL --> RECONCILE_WORKER
+
+    EXPORT_WORKER -->|progress| PROGRESS_TRACKER
+    IMPORT_WORKER -->|progress| PROGRESS_TRACKER
+    PROGRESS_TRACKER --> REDIS
+    PROGRESS_TRACKER --> PG
+
+    EXPORT_WORKER -->|complete| MINIO
+    IMPORT_WORKER -->|complete| PG
+    CLEANUP_WORKER -->|complete| PG
+    COMPACTION_WORKER -->|complete| MINIO
+
+    WORKER_POOL -->|success| PG
+    WORKER_POOL -->|success| NOTIF_EVENT
+    WORKER_POOL -->|failure| RETRY_MGR
+    RETRY_MGR -->|retry| JOB_QUEUE
+    RETRY_MGR -->|exhausted| DEAD_LETTER
+    DEAD_LETTER --> PG
+    WORKER_POOL -->|timeout| TIMEOUT_ERR
+
+    JOB_POLL --> JOB_CTRL
+    JOB_CTRL --> PROGRESS_TRACKER
+    PROGRESS_TRACKER --> JOB_STATUS
+
+    JOB_CANCEL --> JOB_CTRL
+    JOB_CTRL --> JOB_QUEUE
+    JOB_QUEUE -->|remove| CANCEL_ERR
+
+    EXPORT_WORKER -.-> TRACES
+    IMPORT_WORKER -.-> TRACES
+    JOB_SVC -.-> METRICS
+    PROGRESS_TRACKER -.-> METRICS

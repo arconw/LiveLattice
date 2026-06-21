@@ -1,0 +1,75 @@
+graph TD
+    subgraph Ingress["Ingress"]
+        CREATE_WS["POST /workspaces"]
+        INVITE["POST /workspaces/:id/members"]
+        UPDATE_ROLE["PATCH /workspaces/:id/members/:userId"]
+        DELETE_MEMBER["DELETE /workspaces/:id/members/:userId"]
+        DELETE_WS["DELETE /workspaces/:id"]
+    end
+
+    subgraph Core["Core Domain (RBAC)"]
+        WS_CONTROLLER["WorkspaceController"]
+        PERM_GUARD["Permission Guard"]
+        QUOTA_CHECK["Quota Check Aspect"]
+        MEMBER_SVC["Member Service"]
+        WORKSPACE_SVC["Workspace Service"]
+        PERM_CACHE["Permission Cache (Redis)"]
+        QUOTA_CACHE["Quota Counter (Redis)"]
+    end
+
+    subgraph Storage["Storage"]
+        PG[("PostgreSQL<br/>workspaces, members")]
+        REDIS[("Redis")]
+    end
+
+    subgraph Outbound["Outbound Events"]
+        KAFKA_EVENTS["Kafka<br/>WorkspaceCreated<br/>MemberAdded<br/>MemberRemoved<br/>WorkspaceDeleted"]
+    end
+
+    subgraph Errors["Error Handling"]
+        QUOTA_ERR["Quota Exceeded (429)"]
+        PERM_ERR["Forbidden (403)"]
+        SLUG_ERR["Slug Conflict (409)"]
+        NOT_FOUND["Not Found (404)"]
+    end
+
+    subgraph Observability["Observability"]
+        TRACES["OTLP Traces"]
+        METRICS["Metrics"]
+    end
+
+    CREATE_WS --> WS_CONTROLLER
+    WS_CONTROLLER --> PERM_GUARD
+    PERM_GUARD -->|check role| PERM_CACHE
+    PERM_CACHE -->|miss| PG
+    PERM_GUARD -->|no permission| PERM_ERR
+    PERM_GUARD --> WORKSPACE_SVC
+    WORKSPACE_SVC --> QUOTA_CHECK
+    QUOTA_CHECK -->|exceeded| QUOTA_ERR
+    QUOTA_CHECK --> PG
+    PG -->|slug collision| SLUG_ERR
+    WORKSPACE_SVC --> KAFKA_EVENTS
+    WORKSPACE_SVC -->|response| CREATE_WS
+
+    INVITE --> WS_CONTROLLER
+    DELETE_MEMBER --> WS_CONTROLLER
+    UPDATE_ROLE --> WS_CONTROLLER
+    WS_CONTROLLER --> PERM_GUARD
+    PERM_GUARD --> MEMBER_SVC
+    MEMBER_SVC --> PG
+    MEMBER_SVC -->|invalidate| PERM_CACHE
+    MEMBER_SVC --> KAFKA_EVENTS
+
+    DELETE_WS --> WS_CONTROLLER
+    WS_CONTROLLER --> PERM_GUARD
+    PERM_GUARD --> WORKSPACE_SVC
+    WORKSPACE_SVC -->|soft delete| PG
+    WORKSPACE_SVC --> KAFKA_EVENTS
+
+    PG -->|not found| NOT_FOUND
+
+    WS_CONTROLLER -.-> TRACES
+    WORKSPACE_SVC -.-> TRACES
+    MEMBER_SVC -.-> TRACES
+    QUOTA_CHECK -.-> METRICS
+    PERM_CACHE -.-> METRICS

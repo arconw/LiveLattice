@@ -1,0 +1,82 @@
+graph TD
+    subgraph Ingress["Ingress"]
+        KAFKA_EVENTS["Kafka Domain Events<br/>member.invited, canvas.comment, etc."]
+        NOTIF_CRUD["Notification CRUD (REST)"]
+        PREF_CRUD["Preferences CRUD (REST)"]
+    end
+
+    subgraph Notifications["Notifications Service (Spring Boot)"]
+        NOTIF_CONSUMER["NotificationConsumer"]
+        RECIPIENT_RESOLVER["Recipient Resolver"]
+        PREF_CHECK["Preferences Check"]
+        TEMPLATE_ENG["Template Engine<br/>(Thymeleaf)"]
+        DIGEST_MGR["Digest Manager"]
+        WEBHOOK_MGR["Webhook Manager"]
+        WEBHOOK_QUEUE["Webhook Delivery Queue"]
+        NOTIF_STORE["Notification Store"]
+    end
+
+    subgraph Channels["Delivery Channels"]
+        REDIS_STREAM["Redis Stream<br/>-> Realtime -> Client<br/>(in-app)"]
+        SENDGRID["SendGrid / SES<br/>(email)"]
+        WEBHOOK_HTTP["HTTP POST<br/>(webhook)"]
+    end
+
+    subgraph Storage["Storage"]
+        PG[("PostgreSQL<br/>notifications, prefs")]
+        REDIS[("Redis<br/>in-app stream")]
+        TEMPLATE_CACHE["In-Memory<br/>Template Cache"]
+    end
+
+    subgraph Outbound["Outbound"]
+        NOTIF_LIST["{ notifications, total, unread }"]
+        PREF_RESP["{ preferences, webhooks }"]
+        UNREAD_COUNT["{ count: number }"]
+    end
+
+    subgraph Errors["Error Handling"]
+        DELIVERY_FAIL["Delivery Failed"]
+        WEBHOOK_FAIL["Webhook Failed (retry)"]
+        DEAD_LETTER["Dead Letter Queue"]
+    end
+
+    subgraph Observability["Observability"]
+        METRICS["notifications_sent_total<br/>email_delivery_duration<br/>webhook_failures_total"]
+        TRACES["OTLP Traces"]
+    end
+
+    KAFKA_EVENTS --> NOTIF_CONSUMER
+    NOTIF_CONSUMER --> RECIPIENT_RESOLVER
+    RECIPIENT_RESOLVER --> PREF_CHECK
+    PREF_CHECK -->|muted| DROP["Drop"]
+    PREF_CHECK -->|allowed| TEMPLATE_ENG
+    TEMPLATE_ENG --> TEMPLATE_CACHE
+    TEMPLATE_ENG --> NOTIF_STORE
+    NOTIF_STORE --> PG
+
+    NOTIF_STORE -->|in-app| REDIS_STREAM
+    NOTIF_STORE -->|email instant| SENDGRID
+    NOTIF_STORE -->|digest| DIGEST_MGR
+    DIGEST_MGR --> SENDGRID
+
+    NOTIF_STORE -->|webhook| WEBHOOK_MGR
+    WEBHOOK_MGR --> WEBHOOK_QUEUE
+    WEBHOOK_QUEUE --> WEBHOOK_HTTP
+    WEBHOOK_HTTP -->|success| DONE["Mark Delivered"]
+    WEBHOOK_HTTP -->|4xx| WEBHOOK_FAIL
+    WEBHOOK_HTTP -->|5xx/timeout| WEBHOOK_FAIL
+    WEBHOOK_FAIL -->|retry| WEBHOOK_QUEUE
+    WEBHOOK_FAIL -->|max retries| DEAD_LETTER
+
+    NOTIF_CRUD --> NOTIF_STORE
+    NOTIF_STORE --> NOTIF_LIST
+    NOTIF_STORE --> UNREAD_COUNT
+
+    PREF_CRUD --> PREF_CHECK
+    PREF_CHECK --> PREF_RESP
+
+    SENDGRID -->|bounce| DELIVERY_FAIL
+
+    NOTIF_CONSUMER -.-> TRACES
+    WEBHOOK_MGR -.-> METRICS
+    SENDGRID -.-> METRICS

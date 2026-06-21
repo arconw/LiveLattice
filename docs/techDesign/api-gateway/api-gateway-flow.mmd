@@ -1,0 +1,71 @@
+graph TD
+    subgraph Ingress["Ingress"]
+        HTTP["HTTP Request"]
+        WS_CONN["WebSocket Upgrade"]
+    end
+
+    subgraph Gateway["API Gateway (NestJS/Fastify)"]
+        TLS["TLS Termination"]
+        JWT_VALIDATE["JWT Validation"]
+        RATE_LIMIT["Rate Limiter<br/>(Redis Token Bucket)"]
+        ROUTE["Router"]
+        PROXY["Proxy / BFF Aggregator"]
+        METRICS["Metrics Recorder"]
+    end
+
+    subgraph Processing["Processing"]
+        CORE["Core Domain<br/>(localhost:8080)"]
+        SEARCH["Search Service<br/>(localhost:8081)"]
+        NOTIFY["Notifications<br/>(localhost:8082)"]
+        IMPORT["Import/Export<br/>(localhost:8083)"]
+    end
+
+    subgraph Outbound["Outbound"]
+        RESP["HTTP Response"]
+        WS_MSG["WebSocket Message"]
+    end
+
+    subgraph Errors["Error Handling"]
+        VALID_ERR["Validation Error (422)"]
+        AUTH_ERR["Auth Error (401/403)"]
+        RATE_ERR["Rate Limit (429)"]
+        INT_ERR["Internal Error (500)"]
+        EXCEPTION_FILTER["Global Exception Filter"]
+    end
+
+    subgraph Observability["Observability"]
+        OTLP_TRACES["OTLP Traces -> Tempo"]
+        PROM_METRICS["Prometheus Metrics"]
+        STRUCT_LOGS["Structured JSON Logs -> Loki"]
+    end
+
+    HTTP --> TLS
+    WS_CONN --> TLS
+    TLS --> JWT_VALIDATE
+    JWT_VALIDATE --> RATE_LIMIT
+    RATE_LIMIT --> ROUTE
+    ROUTE --> PROXY
+
+    PROXY --> CORE
+    PROXY --> SEARCH
+    PROXY --> NOTIFY
+    PROXY --> IMPORT
+
+    CORE --> RESP
+    SEARCH --> RESP
+    NOTIFY --> RESP
+    IMPORT --> RESP
+
+    ROUTE --> WS_MSG
+
+    JWT_VALIDATE -->|invalid| AUTH_ERR
+    RATE_LIMIT -->|exceeded| RATE_ERR
+    PROXY -->|validation fail| VALID_ERR
+    PROXY -->|downstream error| INT_ERR
+    INT_ERR --> EXCEPTION_FILTER
+    EXCEPTION_FILTER --> STRUCT_LOGS
+
+    TLS -.-> OTLP_TRACES
+    PROXY -.-> OTLP_TRACES
+    ROUTE -.-> PROM_METRICS
+    EXCEPTION_FILTER -.-> STRUCT_LOGS

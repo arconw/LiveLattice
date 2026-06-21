@@ -1,0 +1,81 @@
+graph TD
+    subgraph Ingress["Ingress"]
+        SEARCH["GET /search?q=&type=&workspace_id="]
+        SUGGEST["GET /search/suggest?q="]
+        REINDEX["POST /search/reindex"]
+    end
+
+    subgraph Search["Search Service (Spring Boot)"]
+        SEARCH_CTRL["SearchController"]
+        SEARCH_SVC["SearchService"]
+        SUGGEST_SVC["SuggestService"]
+        INDEX_MGR["IndexManager"]
+        HIGHLIGHT["Highlight Builder"]
+    end
+
+    subgraph Events["Kafka Consumers"]
+        CANVAS_CREATED["canvas.created"]
+        CANVAS_UPDATED["canvas.updated"]
+        CANVAS_DELETED["canvas.deleted"]
+        COMMENT_ADDED["comment.added"]
+        COMMENT_DELETED["comment.deleted"]
+    end
+
+    subgraph Storage["Storage"]
+        OS[("OpenSearch<br/>3-node cluster")]
+        REDIS[("Redis<br/>suggest cache")]
+    end
+
+    subgraph Outbound["Outbound"]
+        SEARCH_RESULTS["{ hits, total, facets, highlights }"]
+        SUGGESTIONS["[suggestion1, suggestion2, ...]"]
+        INDEX_STATUS["{ index, docCount, size }"]
+    end
+
+    subgraph Errors["Error Handling"]
+        QUERY_ERR["Query Parse Error (422)"]
+        OS_DOWN["OpenSearch Unavailable (503)"]
+        TIMEOUT["Search Timeout"]
+    end
+
+    subgraph Observability["Observability"]
+        METRICS["search_duration_ms<br/>index_doc_count<br/>query_latency"]
+        TRACES["OTLP Traces"]
+    end
+
+    SEARCH --> SEARCH_CTRL
+    SEARCH_CTRL --> SEARCH_SVC
+    SEARCH_SVC -->|build query| SEARCH_SVC
+    SEARCH_SVC --> OS
+    OS --> SEARCH_SVC
+    SEARCH_SVC --> HIGHLIGHT
+    SEARCH_SVC --> SEARCH_RESULTS
+
+    SUGGEST --> SEARCH_CTRL
+    SEARCH_CTRL --> SUGGEST_SVC
+    SUGGEST_SVC -->|check cache| REDIS
+    REDIS -->|hit| SUGGESTIONS
+    REDIS -->|miss| OS
+    OS -->|completion| SUGGEST_SVC
+    SUGGEST_SVC --> REDIS
+    SUGGEST_SVC --> SUGGESTIONS
+
+    REINDEX --> SEARCH_CTRL
+    SEARCH_CTRL --> INDEX_MGR
+    INDEX_MGR -->|recreate index| OS
+
+    CANVAS_CREATED --> INDEX_MGR
+    CANVAS_UPDATED --> INDEX_MGR
+    CANVAS_DELETED --> INDEX_MGR
+    COMMENT_ADDED --> INDEX_MGR
+    COMMENT_DELETED --> INDEX_MGR
+    INDEX_MGR -->|bulk index| OS
+
+    OS -->|bad query| QUERY_ERR
+    OS -->|connection refused| OS_DOWN
+    OS -->|timeout| TIMEOUT
+
+    SEARCH_SVC -.-> METRICS
+    SUGGEST_SVC -.-> METRICS
+    INDEX_MGR -.-> METRICS
+    SEARCH_SVC -.-> TRACES

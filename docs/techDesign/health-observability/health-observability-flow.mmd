@@ -1,0 +1,103 @@
+graph TD
+    subgraph Ingress["Ingress"]
+        HEALTH["GET /health"]
+        READY["GET /ready"]
+        METRICS_GET["GET /metrics"]
+        TRACE_GET["GET /observability/traces/:id"]
+        LOGS_GET["GET /observability/logs"]
+    end
+
+    subgraph Services["Instrumented Services"]
+        GATEWAY["Gateway (NestJS)"]
+        REALTIME["Realtime (NestJS)"]
+        CORE["Core Domain (Spring Boot)"]
+        SEARCH["Search Service"]
+        INTEGRATIONS["Integrations"]
+    end
+
+    subgraph Telemetry["Telemetry Pipeline"]
+        OTLP_COLLECTOR["OTel Collector"]
+        PROM_SCRAPE["Prometheus Scrape<br/>(/metrics)"]
+    end
+
+    subgraph Storage["Observability Storage"]
+        PROM[("Prometheus<br/>Metrics DB")]
+        TEMPO[("Tempo / Jaeger<br/>Trace DB")]
+        LOKI[("Loki<br/>Log Store")]
+    end
+
+    subgraph Visualization["Visualization & Alerting"]
+        GRAFANA["Grafana Dashboards"]
+        ALERT_MGR["AlertManager"]
+        SLACK["Slack / PagerDuty"]
+    end
+
+    subgraph Outbound["Outbound"]
+        STATUS_PAGE["Health Status"]
+        METRICS_PAGE["Metrics Page"]
+        DASHBOARDS["Embedded Grafana URLs"]
+    end
+
+    subgraph Errors["Error Handling"]
+        DEGRADED["Degraded (dependency down)"]
+        DOWN["Down (critical dependency)"]
+        ALERT_FIRED["Alert Fired!"]
+    end
+
+    subgraph Config["Configuration"]
+        PROM_YAML["prometheus.yaml<br/>scrape configs"]
+        OTLP_YAML["otel-collector.yaml<br/>pipeline config"]
+        GRAFANA_DS["grafana/datasources/*.yaml"]
+        GRAFANA_DASH["grafana/dashboards/*.json"]
+    end
+
+    HEALTH --> GATEWAY
+    HEALTH --> CORE
+    READY --> GATEWAY
+    READY --> CORE
+    READY -->|check deps| PROM
+
+    GATEWAY -->|OTLP traces| OTLP_COLLECTOR
+    REALTIME -->|OTLP traces| OTLP_COLLECTOR
+    CORE -->|OTLP traces| OTLP_COLLECTOR
+    SEARCH -->|OTLP traces| OTLP_COLLECTOR
+    INTEGRATIONS -->|OTLP traces| OTLP_COLLECTOR
+
+    GATEWAY -->|/metrics| PROM_SCRAPE
+    REALTIME -->|/metrics| PROM_SCRAPE
+    CORE -->|/metrics| PROM_SCRAPE
+    SEARCH -->|/metrics| PROM_SCRAPE
+    INTEGRATIONS -->|/metrics| PROM_SCRAPE
+
+    GATEWAY -->|JSON logs| LOKI
+    REALTIME -->|JSON logs| LOKI
+    CORE -->|JSON logs| LOKI
+    SEARCH -->|JSON logs| LOKI
+    INTEGRATIONS -->|JSON logs| LOKI
+
+    OTLP_COLLECTOR -->|metrics| PROM
+    OTLP_COLLECTOR -->|traces| TEMPO
+    OTLP_COLLECTOR -->|logs| LOKI
+
+    PROM --> GRAFANA
+    TEMPO --> GRAFANA
+    LOKI --> GRAFANA
+
+    PROM_SCRAPE --> PROM
+
+    PROM -->|alert rules| ALERT_MGR
+    ALERT_MGR --> SLACK
+
+    READY -->|degraded| DEGRADED
+    READY -->|down| DOWN
+    DOWN --> STATUS_PAGE
+
+    GRAFANA --> DASHBOARDS
+    TRACE_GET --> TEMPO
+    LOGS_GET --> LOKI
+    METRICS_GET --> PROM
+
+    PROM_YAML -.-> PROM_SCRAPE
+    OTLP_YAML -.-> OTLP_COLLECTOR
+    GRAFANA_DS -.-> GRAFANA
+    GRAFANA_DASH -.-> GRAFANA
