@@ -91,14 +91,14 @@ public class WorkspaceService {
 
     @Transactional(readOnly = true)
     public WorkspaceResponse getById(String id, String userId) {
-        Workspace workspace = workspaceRepository.findById(UUID.fromString(id))
+        Workspace workspace = workspaceRepository.findByIdAndDeletedAtIsNull(UUID.fromString(id))
             .orElseThrow(() -> new NotFoundException("Workspace not found: " + id));
         permissionService.requirePermission(id, resolveUserId(userId).toString(), "workspace:read");
         return WorkspaceResponse.from(workspace);
     }
 
     public WorkspaceResponse update(String id, UpdateWorkspaceRequest request, String userId) {
-        Workspace workspace = workspaceRepository.findById(UUID.fromString(id))
+        Workspace workspace = workspaceRepository.findByIdAndDeletedAtIsNull(UUID.fromString(id))
             .orElseThrow(() -> new NotFoundException("Workspace not found: " + id));
         permissionService.requirePermission(id, resolveUserId(userId).toString(), "workspace:update");
 
@@ -120,16 +120,17 @@ public class WorkspaceService {
     }
 
     public void delete(String id, String userId) {
-        Workspace workspace = workspaceRepository.findById(UUID.fromString(id))
+        Workspace workspace = workspaceRepository.findByIdAndDeletedAtIsNull(UUID.fromString(id))
             .orElseThrow(() -> new NotFoundException("Workspace not found: " + id));
         permissionService.requirePermission(id, resolveUserId(userId).toString(), "workspace:delete");
-        memberRepository.deleteAllByWorkspaceId(UUID.fromString(id));
-        workspaceRepository.delete(workspace);
+        workspace.setDeletedAt(Instant.now());
+        workspace.setUpdatedAt(Instant.now());
+        workspaceRepository.save(workspace);
     }
 
     @Transactional(readOnly = true)
     public List<MemberResponse> listMembers(String workspaceId, String userId) {
-        if (!workspaceRepository.existsById(UUID.fromString(workspaceId))) {
+        if (!workspaceRepository.existsByIdAndDeletedAtIsNull(UUID.fromString(workspaceId))) {
             throw new NotFoundException("Workspace not found: " + workspaceId);
         }
         permissionService.requirePermission(workspaceId, resolveUserId(userId).toString(), "member:read");
@@ -142,7 +143,7 @@ public class WorkspaceService {
         UUID wsUuid = UUID.fromString(workspaceId);
         UUID inviterUuid = resolveUserId(userId);
 
-        if (!workspaceRepository.existsById(wsUuid)) {
+        if (!workspaceRepository.existsByIdAndDeletedAtIsNull(wsUuid)) {
             throw new NotFoundException("Workspace not found: " + workspaceId);
         }
         permissionService.requirePermission(workspaceId, inviterUuid.toString(), "member:add");

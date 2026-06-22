@@ -99,7 +99,7 @@ class WorkspaceServiceTest {
     void getById_shouldReturnWorkspaceIfMember() {
         Workspace ws = new Workspace("WS", "ws", Tier.FREE, UUID.fromString(userId));
         User user = new User(userId, "a@b.com", "User1");
-        when(workspaceRepository.findById(any())).thenReturn(Optional.of(ws));
+        when(workspaceRepository.findByIdAndDeletedAtIsNull(any())).thenReturn(Optional.of(ws));
         when(userRepository.findByExternalSubject(userId)).thenReturn(Optional.of(user));
         doNothing().when(permissionService).requirePermission(wsId, user.getId().toString(), "workspace:read");
 
@@ -109,7 +109,7 @@ class WorkspaceServiceTest {
 
     @Test
     void getById_shouldThrowIfNotFound() {
-        when(workspaceRepository.findById(any())).thenReturn(Optional.empty());
+        when(workspaceRepository.findByIdAndDeletedAtIsNull(any())).thenReturn(Optional.empty());
 
         assertThrows(NotFoundException.class, () ->
             workspaceService.getById(wsId, userId));
@@ -130,7 +130,7 @@ class WorkspaceServiceTest {
     void update_shouldModifyWorkspace() {
         Workspace ws = new Workspace("Old", "old-slug", Tier.FREE, UUID.fromString(userId));
         User user = new User(userId, "a@b.com", "User1");
-        when(workspaceRepository.findById(any())).thenReturn(Optional.of(ws));
+        when(workspaceRepository.findByIdAndDeletedAtIsNull(any())).thenReturn(Optional.of(ws));
         when(userRepository.findByExternalSubject(userId)).thenReturn(Optional.of(user));
         doNothing().when(permissionService).requirePermission(wsId, user.getId().toString(), "workspace:update");
         when(workspaceRepository.save(any())).thenAnswer(i -> i.getArgument(0));
@@ -142,16 +142,18 @@ class WorkspaceServiceTest {
     }
 
     @Test
-    void delete_shouldRemoveWorkspace() {
+    void delete_shouldSoftDeleteWorkspace() {
         Workspace ws = new Workspace("WS", "ws", Tier.FREE, UUID.fromString(userId));
         User user = new User(userId, "a@b.com", "User1");
-        when(workspaceRepository.findById(any())).thenReturn(Optional.of(ws));
+        when(workspaceRepository.findByIdAndDeletedAtIsNull(any())).thenReturn(Optional.of(ws));
         when(userRepository.findByExternalSubject(userId)).thenReturn(Optional.of(user));
         doNothing().when(permissionService).requirePermission(wsId, user.getId().toString(), "workspace:delete");
 
         workspaceService.delete(wsId, userId);
 
-        verify(workspaceRepository).delete(ws);
+        assertNotNull(ws.getDeletedAt());
+        verify(workspaceRepository).save(ws);
+        verify(workspaceRepository, never()).delete(ws);
     }
 
     @Test
@@ -160,7 +162,7 @@ class WorkspaceServiceTest {
         AddMemberRequest request = new AddMemberRequest(memberId, Role.EDITOR);
         User inviter = new User(userId, "inviter@b.com", "Inviter");
         User invited = new User(memberId, "invited@b.com", "Invited");
-        when(workspaceRepository.existsById(any())).thenReturn(true);
+        when(workspaceRepository.existsByIdAndDeletedAtIsNull(any())).thenReturn(true);
         when(userRepository.findByExternalSubject(userId)).thenReturn(Optional.of(inviter));
         when(userRepository.findByExternalSubject(memberId)).thenReturn(Optional.of(invited));
         doNothing().when(permissionService).requirePermission(wsId, inviter.getId().toString(), "member:add");
@@ -181,7 +183,7 @@ class WorkspaceServiceTest {
         User inviter = new User(userId, "inviter@b.com", "Inviter");
         User invited = new User(memberId, "invited@b.com", "Invited");
         UUID wsUuid = UUID.fromString(wsId);
-        when(workspaceRepository.existsById(any())).thenReturn(true);
+        when(workspaceRepository.existsByIdAndDeletedAtIsNull(any())).thenReturn(true);
         when(userRepository.findByExternalSubject(userId)).thenReturn(Optional.of(inviter));
         when(userRepository.findByExternalSubject(memberId)).thenReturn(Optional.of(invited));
         doNothing().when(permissionService).requirePermission(wsId, inviter.getId().toString(), "member:add");
@@ -234,7 +236,7 @@ class WorkspaceServiceTest {
         String memberId = UUID.randomUUID().toString();
         AddMemberRequest request = new AddMemberRequest(memberId, Role.EDITOR);
         User inviter = new User(userId, "inviter@b.com", "Inviter");
-        when(workspaceRepository.existsById(any())).thenReturn(true);
+        when(workspaceRepository.existsByIdAndDeletedAtIsNull(any())).thenReturn(true);
         when(userRepository.findByExternalSubject(userId)).thenReturn(Optional.of(inviter));
         doNothing().when(permissionService).requirePermission(wsId, inviter.getId().toString(), "member:add");
         doThrow(new QuotaExceededException("Member limit reached"))
@@ -247,7 +249,7 @@ class WorkspaceServiceTest {
     @Test
     void listMembers_shouldEnforcePermission() {
         User user = new User(userId, "a@b.com", "User1");
-        when(workspaceRepository.existsById(any())).thenReturn(true);
+        when(workspaceRepository.existsByIdAndDeletedAtIsNull(any())).thenReturn(true);
         when(userRepository.findByExternalSubject(userId)).thenReturn(Optional.of(user));
         doNothing().when(permissionService).requirePermission(wsId, user.getId().toString(), "member:read");
         when(memberRepository.findByWorkspaceIdOrderByJoinedAtAsc(any())).thenReturn(List.of(

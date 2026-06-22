@@ -207,6 +207,10 @@ services:
       context: ./core
     environment:
       SPRING_PROFILES_ACTIVE: docker
+      LIVELATTICE_SNAPSHOTS_ENDPOINT: http://minio:9000
+      LIVELATTICE_SNAPSHOTS_ACCESS_KEY: ${MINIO_ROOT_USER:-livelattice}
+      LIVELATTICE_SNAPSHOTS_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-livelattice_dev_password}
+      LIVELATTICE_SNAPSHOTS_BUCKET: ${MINIO_SNAPSHOTS_BUCKET:-livelattice-snapshots}
     ports:
       - "${CORE_PORT:-8080}:8080"
     depends_on:
@@ -215,6 +219,8 @@ services:
       redis:
         condition: service_healthy
       kafka:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health"]

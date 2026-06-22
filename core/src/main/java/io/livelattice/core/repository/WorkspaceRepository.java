@@ -13,6 +13,10 @@ public interface WorkspaceRepository extends JpaRepository<Workspace, UUID> {
 
     Optional<Workspace> findBySlugAndDeletedAtIsNull(String slug);
 
+    Optional<Workspace> findByIdAndDeletedAtIsNull(UUID id);
+
+    boolean existsByIdAndDeletedAtIsNull(UUID id);
+
     @Query("SELECT w FROM Workspace w JOIN WorkspaceMember m ON w.id = m.workspaceId WHERE m.userId = :userId AND w.deletedAt IS NULL")
     List<Workspace> findByUserId(@Param("userId") UUID userId);
 }
