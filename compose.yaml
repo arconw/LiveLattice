@@ -203,8 +203,10 @@ services:
       - livelattice
 
   core:
-    image: busybox:1.37
-    command: sh -c "mkdir -p /www && printf core-ok > /www/health && httpd -f -p 8080 -h /www"
+    build:
+      context: ./core
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
     ports:
       - "${CORE_PORT:-8080}:8080"
     depends_on:
@@ -215,7 +217,7 @@ services:
       kafka:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health"]
       <<: *placeholder-health
     networks:
       - livelattice
