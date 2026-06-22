@@ -19,11 +19,11 @@ This roadmap tracks implementation status, next backend stages, and working rule
 |---:|---|---|---|---|
 | 1 | Infrastructure & Docker Compose | Done | `docs/prompts/infra-compose.md` | `docs/techDesign/infra-compose/infra-compose-design.md` |
 | 2 | API Gateway | Done | `docs/prompts/api-gateway.md` | `docs/techDesign/api-gateway/api-gateway-design.md` |
-| 3 | Auth & Identity | Pending | `docs/prompts/auth-identity.md` | `docs/techDesign/auth-identity/auth-identity-design.md` |
+| 3 | Auth & Identity | Next | `docs/prompts/auth-identity.md` | `docs/techDesign/auth-identity/auth-identity-design.md` |
 | 4 | Core Domain - Workspaces & RBAC | Done | `docs/prompts/workspaces-rbac.md` | `docs/techDesign/workspaces-rbac/workspaces-rbac-design.md` |
 | 5 | Core Domain - Canvas & Documents | Done | `docs/prompts/canvas-documents.md` | `docs/techDesign/canvas-documents/canvas-documents-design.md` |
 | 6 | Core Domain - Dashboard & Analytics | Done | `docs/prompts/dashboard-analytics.md` | `docs/techDesign/dashboard-analytics/dashboard-analytics-design.md` |
-| 7 | Realtime Collaboration | Next | `docs/prompts/realtime.md` | `docs/techDesign/realtime/realtime-design.md` |
+| 7 | Realtime Collaboration | Pending | `docs/prompts/realtime.md` | `docs/techDesign/realtime/realtime-design.md` |
 | 8 | Import & Export | Pending | `docs/prompts/import-export.md` | `docs/techDesign/import-export/import-export-design.md` |
 | 9 | Search | Pending | `docs/prompts/search.md` | `docs/techDesign/search/search-design.md` |
 | 10 | Notifications | Pending | `docs/prompts/notifications.md` | `docs/techDesign/notifications/notifications-design.md` |
@@ -50,13 +50,27 @@ Remaining placeholder services in `compose.yaml`:
 
 ## Recommended Next Work
 
-1. Implement Stage 7: Realtime Collaboration.
-2. Add realtime collaboration backend and infrastructure without frontend changes.
-3. Keep all database schema changes forward-only through Flyway migrations.
-4. Verify through Docker Compose, including gateway proxy paths where applicable.
-5. Commit and push only after tests, image build, Compose startup, and smoke checks pass.
+1. Implement Stage 3: Auth & Identity before Stage 7 Realtime Collaboration.
+2. Use Keycloak as the identity source of truth and complete Gateway/Core auth integration.
+3. Provision users through the auth/login path only, with no development fallback that creates users outside auth.
+4. Implement workspace-scoped API keys unless later design review changes the scope.
+5. Keep all database schema changes forward-only through Flyway migrations.
+6. Verify through Docker Compose, including gateway auth paths and protected core proxy paths.
+7. Commit and push only after tests, image build, Compose startup, and smoke checks pass.
 
-Stage 3 Auth & Identity remains pending. Local backend currently uses `x-user-id` as the development identity boundary. Keycloak is available in Compose, but full JWT/identity integration is not yet implemented. Stage 6 is complete and verified through direct core and gateway smoke checks.
+Stage 3 Auth & Identity is next because Stage 7 Realtime Collaboration depends on JWT-based connection authentication. Keycloak is available in Compose, but full JWT/identity integration is not yet implemented. Stage 6 is complete and verified through direct core and gateway smoke checks.
+
+## Auth Implementation Decisions
+
+- Keycloak is the identity source of truth. Application `users.external_subject` must map to the Keycloak subject (`sub`).
+- User provisioning must happen through the auth/login flow only, including local development.
+- Gateway is the external auth boundary and should pass trusted internal identity headers to backend services.
+- Core keeps domain RBAC, API key validation, and a `UserService` for idempotent user provisioning from authenticated Keycloak claims.
+- Direct Core access after Auth must be closed by default.
+- Stage 7 Realtime Collaboration must be implemented after Stage 3 so WebSocket JWT authentication can be real.
+- Realm export is required for deterministic local Keycloak setup.
+- API keys should be workspace-scoped service tokens for the MVP.
+- MFA and social login are backend/auth capabilities in this stage. Frontend UX is out of scope.
 
 ## Verification Gate for Every Functional Stage
 
