@@ -167,8 +167,10 @@ services:
       - livelattice
 
   gateway:
-    image: busybox:1.37
-    command: sh -c "mkdir -p /www && printf gateway-ok > /www/health && httpd -f -p 3000 -h /www"
+    build:
+      context: ./gateway
+    environment:
+      PORT: 3000
     ports:
       - "${GATEWAY_PORT:-3000}:3000"
     depends_on:
@@ -179,7 +181,7 @@ services:
       kafka:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health"]
       <<: *placeholder-health
     networks:
       - livelattice

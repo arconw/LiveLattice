@@ -41,6 +41,7 @@ secrets/*
 *.crt
 
 # Docker and local volumes
+.docker/
 .docker-data/
 docker-data/
 volumes/
