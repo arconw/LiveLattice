@@ -27,8 +27,10 @@ spring:
 server:
   port: 8080
 
-
 livelattice:
+  auth:
+    internal-secret: ${INTERNAL_AUTH_SECRET:livelattice_internal_dev_secret}
+    api-key-cache-ttl-seconds: ${API_KEY_CACHE_TTL_SECONDS:300}
   snapshots:
     endpoint: ${LIVELATTICE_SNAPSHOTS_ENDPOINT:http://localhost:9100}
     access-key: ${LIVELATTICE_SNAPSHOTS_ACCESS_KEY:livelattice}

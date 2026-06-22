@@ -21,6 +21,10 @@ public class PermissionService {
     }
 
     public boolean hasPermission(String workspaceId, String userId, String permission) {
+        ApiKeyValidation currentKey = AuthContext.apiKey();
+        if (currentKey != null && (!workspaceId.equals(currentKey.workspaceId()) || !currentKey.permissions().contains(permission))) {
+            return false;
+        }
         Optional<WorkspaceMember> member = memberRepository.findByWorkspaceIdAndUserId(
             UUID.fromString(workspaceId), UUID.fromString(userId));
         if (member.isEmpty()) {

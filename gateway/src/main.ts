@@ -8,6 +8,7 @@ import { AuthService } from "./auth";
 import { GatewayConfig, loadConfig } from "./config";
 import { GatewayMetrics } from "./metrics";
 import { ProxyService } from "./proxy";
+import type { IdentityHeaders } from "./proxy";
 import { FixedWindowRateLimiter } from "./rate-limit";
 
 export interface CreateAppOptions {
@@ -16,6 +17,7 @@ export interface CreateAppOptions {
 }
 
 const startedAtKey = Symbol("startedAt");
+const identityKey = Symbol("identity");
 
 export async function createApp(options: CreateAppOptions = {}): Promise<NestFastifyApplication> {
   const config = options.config ?? loadConfig(options.env);
@@ -41,10 +43,23 @@ export async function createApp(options: CreateAppOptions = {}): Promise<NestFas
       reply.code(429).send({ error: "Rate limit exceeded" });
       return;
     }
-    if (isGatewayRoute(request)) {
+    if (isProtectedRoute(request)) {
+      if (isApiKeyRequest(request)) {
+        return;
+      }
       const decision = await auth.authorize(request.headers.authorization);
       if (!decision.allowed) {
         reply.code(decision.statusCode ?? 401).send({ error: decision.message ?? "Unauthorized" });
+        return;
+      }
+      if (decision.subject) {
+        Reflect.set(request, identityKey, {
+          subject: decision.subject,
+          email: decision.email ?? `${decision.subject}@livelattice.local`,
+          displayName: decision.displayName ?? decision.email ?? decision.subject,
+          roles: decision.roles ?? [],
+          internalSecret: config.auth.internalSecret
+        } satisfies IdentityHeaders);
       }
     }
   });
@@ -55,10 +70,23 @@ export async function createApp(options: CreateAppOptions = {}): Promise<NestFas
     metrics.finish(request.method, routeLabel(request), reply.statusCode, durationSeconds);
   });
 
-  server.all("/api/:service", async (request, reply) => proxy.forward(request, reply));
-  server.all("/api/:service/*", async (request, reply) => proxy.forward(request, reply));
+  server.post("/auth/login", async (request, reply) => handleLogin(auth, request, reply));
+  server.post("/auth/refresh", async (request, reply) => handleRefresh(auth, request, reply));
+  server.post("/auth/logout", async (request, reply) => handleLogout(auth, request, reply));
+  server.post("/auth/social", async (request, reply) => handleSocial(auth, request, reply));
+  server.post("/auth/mfa/setup", async (_request, reply) => reply.send(auth.mfaSetup()));
+  server.post("/auth/mfa/verify", async (_request, reply) => reply.send(auth.mfaVerify()));
+  server.all("/auth/keys", async (request, reply) => proxy.forwardPrefix(request, reply, config.routes.core, "/auth/keys", identity(request)));
+  server.all("/auth/keys/*", async (request, reply) => proxy.forwardPrefix(request, reply, config.routes.core, "/auth/keys", identity(request)));
+  server.all("/api/:service", async (request, reply) => proxy.forward(request, reply, identity(request)));
+  server.all("/api/:service/*", async (request, reply) => proxy.forward(request, reply, identity(request)));
 
   await app.init();
+  const originalClose = app.close.bind(app);
+  app.close = async () => {
+    await auth.close();
+    await originalClose();
+  };
   return app;
 }
 
@@ -77,8 +105,18 @@ function clientKey(request: FastifyRequest): string {
   return forwarded?.split(",")[0]?.trim() || request.ip || "unknown";
 }
 
-function isGatewayRoute(request: FastifyRequest): boolean {
-  return (request.raw.url ?? "").startsWith("/api/");
+function isProtectedRoute(request: FastifyRequest): boolean {
+  const url = request.raw.url ?? "";
+  return url.startsWith("/api/core") || url.startsWith("/auth/keys");
+}
+
+function isApiKeyRequest(request: FastifyRequest): boolean {
+  const current = headerValue(request.headers["x-api-key"]);
+  return current !== undefined && current.length > 0 && (request.raw.url ?? "").startsWith("/api/core");
+}
+
+function identity(request: FastifyRequest): IdentityHeaders | undefined {
+  return Reflect.get(request, identityKey) as IdentityHeaders | undefined;
 }
 
 function routeLabel(request: FastifyRequest): string {
@@ -88,4 +126,53 @@ function routeLabel(request: FastifyRequest): string {
     return `/api/${service ?? "unknown"}`;
   }
   return raw.split("?")[0] || "/";
+}
+
+async function handleLogin(auth: AuthService, request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  const body = request.body as { email?: string; password?: string } | undefined;
+  if (!body?.email || !body.password) {
+    reply.code(400).send({ error: "email and password are required" });
+    return;
+  }
+  try {
+    reply.send(await auth.login(body.email, body.password));
+  } catch (error) {
+    reply.code(401).send({ error: error instanceof Error ? error.message : "Login failed" });
+  }
+}
+
+async function handleRefresh(auth: AuthService, request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  const body = request.body as { refreshToken?: string } | undefined;
+  if (!body?.refreshToken) {
+    reply.code(400).send({ error: "refreshToken is required" });
+    return;
+  }
+  try {
+    reply.send(await auth.refresh(body.refreshToken));
+  } catch (error) {
+    reply.code(401).send({ error: error instanceof Error ? error.message : "Refresh failed" });
+  }
+}
+
+async function handleLogout(auth: AuthService, request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  const body = request.body as { refreshToken?: string } | undefined;
+  if (!body?.refreshToken) {
+    reply.code(400).send({ error: "refreshToken is required" });
+    return;
+  }
+  try {
+    await auth.logout(body.refreshToken);
+    reply.code(204).send();
+  } catch (error) {
+    reply.code(502).send({ error: error instanceof Error ? error.message : "Logout failed" });
+  }
+}
+
+async function handleSocial(auth: AuthService, request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  const body = request.body as { provider?: string; redirectUri?: string } | undefined;
+  if (!body?.provider || !body.redirectUri) {
+    reply.code(400).send({ error: "provider and redirectUri are required" });
+    return;
+  }
+  reply.send(auth.socialLogin(body.provider, body.redirectUri));
 }
