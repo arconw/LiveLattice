@@ -10,6 +10,7 @@ This roadmap tracks implementation status, next backend stages, and working rule
 | Stage 1: Infrastructure & Docker Compose | Done | `6515286` | `v0.1.0-infra` | Local infra stack, observability stack, test compose, backend placeholders. |
 | Stage 2: API Gateway | Done | `bc1535d` | `v0.2.0-gateway` | NestJS/Fastify gateway, health, readiness, metrics, proxying, rate limit, optional JWT boundary. |
 | Stage 4: Core Domain - Workspaces & RBAC | Done | `b4edbca` | `v0.3.0-core` | Java 21 Spring Boot 4.1.0 service, workspace/member APIs, RBAC, quotas, Flyway migrations. |
+| Stage 5: Core Domain - Canvas & Documents | Done | `d33b36e` | `v0.4.0-canvas-documents` | Canvas CRUD, snapshots backed by MinIO, comments, templates, events, Docker Compose smoke verified. |
 
 ## Stage Status
 
@@ -19,8 +20,8 @@ This roadmap tracks implementation status, next backend stages, and working rule
 | 2 | API Gateway | Done | `docs/prompts/api-gateway.md` | `docs/techDesign/api-gateway/api-gateway-design.md` |
 | 3 | Auth & Identity | Pending | `docs/prompts/auth-identity.md` | `docs/techDesign/auth-identity/auth-identity-design.md` |
 | 4 | Core Domain - Workspaces & RBAC | Done | `docs/prompts/workspaces-rbac.md` | `docs/techDesign/workspaces-rbac/workspaces-rbac-design.md` |
-| 5 | Core Domain - Canvas & Documents | Next | `docs/prompts/canvas-documents.md` | `docs/techDesign/canvas-documents/canvas-documents-design.md` |
-| 6 | Core Domain - Dashboard & Analytics | Pending | `docs/prompts/dashboard-analytics.md` | `docs/techDesign/dashboard-analytics/dashboard-analytics-design.md` |
+| 5 | Core Domain - Canvas & Documents | Done | `docs/prompts/canvas-documents.md` | `docs/techDesign/canvas-documents/canvas-documents-design.md` |
+| 6 | Core Domain - Dashboard & Analytics | Next | `docs/prompts/dashboard-analytics.md` | `docs/techDesign/dashboard-analytics/dashboard-analytics-design.md` |
 | 7 | Realtime Collaboration | Pending | `docs/prompts/realtime.md` | `docs/techDesign/realtime/realtime-design.md` |
 | 8 | Import & Export | Pending | `docs/prompts/import-export.md` | `docs/techDesign/import-export/import-export-design.md` |
 | 9 | Search | Pending | `docs/prompts/search.md` | `docs/techDesign/search/search-design.md` |
@@ -35,7 +36,7 @@ This roadmap tracks implementation status, next backend stages, and working rule
 Implemented services:
 
 - `gateway`: real service image built from `gateway/`.
-- `core`: real Java Spring Boot service image built from `core/`.
+- `core`: real Java Spring Boot service image built from `core/`, including workspace/RBAC and canvas/document APIs.
 
 Remaining placeholder services in `compose.yaml`:
 
@@ -48,13 +49,13 @@ Remaining placeholder services in `compose.yaml`:
 
 ## Recommended Next Work
 
-1. Implement Stage 5: Core Domain - Canvas & Documents.
-2. Add canvas, canvas snapshots, comments, and templates to the Java `core` service.
+1. Implement Stage 6: Core Domain - Dashboard & Analytics.
+2. Add dashboard and analytics models, services, controllers, migrations, and tests to the Java `core` service.
 3. Keep all database schema changes forward-only through Flyway migrations.
 4. Verify through Docker Compose, including gateway proxy paths under `/api/core/*`.
 5. Commit and push only after tests, image build, Compose startup, and smoke checks pass.
 
-Stage 3 Auth & Identity remains pending. Local backend currently uses `x-user-id` as the development identity boundary. Keycloak is available in Compose, but full JWT/identity integration is not yet implemented.
+Stage 3 Auth & Identity remains pending. Local backend currently uses `x-user-id` as the development identity boundary. Keycloak is available in Compose, but full JWT/identity integration is not yet implemented. Stage 5 is complete and verified through direct core and gateway smoke checks.
 
 ## Verification Gate for Every Functional Stage
 
