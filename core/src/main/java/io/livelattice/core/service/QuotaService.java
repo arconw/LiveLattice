@@ -4,6 +4,7 @@ import io.livelattice.core.exception.QuotaExceededException;
 import io.livelattice.core.model.entity.Workspace;
 import io.livelattice.core.model.enums.Tier;
 import io.livelattice.core.repository.CanvasRepository;
+import io.livelattice.core.repository.DashboardRepository;
 import io.livelattice.core.repository.WorkspaceMemberRepository;
 import io.livelattice.core.repository.WorkspaceRepository;
 import java.util.UUID;
@@ -15,13 +16,16 @@ public class QuotaService {
     private final WorkspaceRepository workspaceRepository;
     private final WorkspaceMemberRepository memberRepository;
     private final CanvasRepository canvasRepository;
+    private final DashboardRepository dashboardRepository;
 
     public QuotaService(WorkspaceRepository workspaceRepository,
                           WorkspaceMemberRepository memberRepository,
-                          CanvasRepository canvasRepository) {
+                          CanvasRepository canvasRepository,
+                          DashboardRepository dashboardRepository) {
         this.workspaceRepository = workspaceRepository;
         this.memberRepository = memberRepository;
         this.canvasRepository = canvasRepository;
+        this.dashboardRepository = dashboardRepository;
     }
 
     public void checkMemberQuota(String workspaceId) {
@@ -52,5 +56,18 @@ public class QuotaService {
 
     public long getCanvasCount(String workspaceId) {
         return canvasRepository.countByWorkspaceIdAndDeletedAtIsNull(UUID.fromString(workspaceId));
+    }
+
+    public void checkDashboardQuota(String workspaceId) {
+        Workspace workspace = workspaceRepository.findById(UUID.fromString(workspaceId))
+            .orElseThrow(() -> new IllegalArgumentException("Workspace not found: " + workspaceId));
+        int maxDashboards = workspace.getTier() == Tier.PRO ? 100 : 5;
+        long current = dashboardRepository.countByWorkspaceIdAndDeletedAtIsNull(UUID.fromString(workspaceId));
+        if (current >= maxDashboards) {
+            throw new QuotaExceededException(
+                "Dashboard limit reached for tier " + workspace.getTier() +
+                " (max " + maxDashboards + ", current " + current + ")"
+            );
+        }
     }
 }

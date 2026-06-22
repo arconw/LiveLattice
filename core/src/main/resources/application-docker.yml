@@ -3,6 +3,10 @@ spring:
     url: jdbc:postgresql://postgres:5432/livelattice
     username: ${POSTGRES_USER:livelattice}
     password: ${POSTGRES_PASSWORD:livelattice_dev_password}
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: ${REDIS_PORT:6379}
 
 livelattice:
   snapshots:

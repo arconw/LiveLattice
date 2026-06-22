@@ -22,14 +22,18 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     implementation("org.springframework.boot:spring-boot-starter-validation")
+    implementation("org.springframework.boot:spring-boot-starter-data-redis")
     implementation("org.flywaydb:flyway-core")
     implementation("org.flywaydb:flyway-database-postgresql")
     runtimeOnly("org.postgresql:postgresql")
     implementation("io.minio:minio:8.5.17")
+    implementation("com.clickhouse:clickhouse-jdbc:0.8.2")
+    implementation("org.apache.httpcomponents.client5:httpclient5:5.4.4")
     compileOnly("org.projectlombok:lombok")
     annotationProcessor("org.projectlombok:lombok")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
+    testImplementation("org.testcontainers:clickhouse:1.21.3")
     testRuntimeOnly("com.h2database:h2")
 }
 
