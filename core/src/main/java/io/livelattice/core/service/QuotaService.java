@@ -3,6 +3,7 @@ package io.livelattice.core.service;
 import io.livelattice.core.exception.QuotaExceededException;
 import io.livelattice.core.model.entity.Workspace;
 import io.livelattice.core.model.enums.Tier;
+import io.livelattice.core.repository.CanvasRepository;
 import io.livelattice.core.repository.WorkspaceMemberRepository;
 import io.livelattice.core.repository.WorkspaceRepository;
 import java.util.UUID;
@@ -13,11 +14,14 @@ public class QuotaService {
 
     private final WorkspaceRepository workspaceRepository;
     private final WorkspaceMemberRepository memberRepository;
+    private final CanvasRepository canvasRepository;
 
     public QuotaService(WorkspaceRepository workspaceRepository,
-                         WorkspaceMemberRepository memberRepository) {
+                          WorkspaceMemberRepository memberRepository,
+                          CanvasRepository canvasRepository) {
         this.workspaceRepository = workspaceRepository;
         this.memberRepository = memberRepository;
+        this.canvasRepository = canvasRepository;
     }
 
     public void checkMemberQuota(String workspaceId) {
@@ -47,6 +51,6 @@ public class QuotaService {
     }
 
     public long getCanvasCount(String workspaceId) {
-        return 0;
+        return canvasRepository.countByWorkspaceIdAndDeletedAtIsNull(UUID.fromString(workspaceId));
     }
 }

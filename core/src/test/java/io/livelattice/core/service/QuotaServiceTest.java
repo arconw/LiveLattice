@@ -6,6 +6,7 @@ import static org.mockito.Mockito.*;
 import io.livelattice.core.exception.QuotaExceededException;
 import io.livelattice.core.model.entity.Workspace;
 import io.livelattice.core.model.enums.Tier;
+import io.livelattice.core.repository.CanvasRepository;
 import io.livelattice.core.repository.WorkspaceMemberRepository;
 import io.livelattice.core.repository.WorkspaceRepository;
 import java.util.Optional;
@@ -23,13 +24,15 @@ class QuotaServiceTest {
     private WorkspaceRepository workspaceRepository;
     @Mock
     private WorkspaceMemberRepository memberRepository;
+    @Mock
+    private CanvasRepository canvasRepository;
 
     private QuotaService quotaService;
     private final String ownerId = UUID.randomUUID().toString();
 
     @BeforeEach
     void setUp() {
-        quotaService = new QuotaService(workspaceRepository, memberRepository);
+        quotaService = new QuotaService(workspaceRepository, memberRepository, canvasRepository);
     }
 
     @Test

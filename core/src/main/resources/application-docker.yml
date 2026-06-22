@@ -1,3 +1,12 @@
 spring:
   datasource:
     url: jdbc:postgresql://postgres:5432/livelattice
+    username: ${POSTGRES_USER:livelattice}
+    password: ${POSTGRES_PASSWORD:livelattice_dev_password}
+
+livelattice:
+  snapshots:
+    endpoint: ${LIVELATTICE_SNAPSHOTS_ENDPOINT:http://minio:9000}
+    access-key: ${LIVELATTICE_SNAPSHOTS_ACCESS_KEY:livelattice}
+    secret-key: ${LIVELATTICE_SNAPSHOTS_SECRET_KEY:livelattice_dev_password}
+    bucket: ${LIVELATTICE_SNAPSHOTS_BUCKET:livelattice-snapshots}
