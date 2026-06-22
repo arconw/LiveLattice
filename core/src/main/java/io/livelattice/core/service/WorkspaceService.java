@@ -53,18 +53,12 @@ public class WorkspaceService {
             .orElseThrow(() -> new NotFoundException("User not found: " + externalSubject));
     }
 
-    private User findOrCreateUser(String externalSubject) {
-        return userRepository.findByExternalSubject(externalSubject)
-            .orElseGet(() -> userRepository.save(
-                new User(externalSubject, externalSubject + "@livelattice.local", externalSubject)));
-    }
-
     public WorkspaceResponse create(CreateWorkspaceRequest request, String userId) {
         if (workspaceRepository.existsBySlugAndDeletedAtIsNull(request.slug())) {
             throw new ConflictException("Slug already taken: " + request.slug());
         }
 
-        User user = findOrCreateUser(userId);
+        User user = resolveUser(userId);
         UUID internalUserId = user.getId();
 
         Workspace workspace = new Workspace(
@@ -149,7 +143,7 @@ public class WorkspaceService {
         permissionService.requirePermission(workspaceId, inviterUuid.toString(), "member:add");
         quotaService.checkMemberQuota(workspaceId);
 
-        User invitedUser = findOrCreateUser(request.userId());
+        User invitedUser = resolveUser(request.userId());
         UUID invitedUuid = invitedUser.getId();
 
         if (memberRepository.findByWorkspaceIdAndUserId(wsUuid, invitedUuid).isPresent()) {

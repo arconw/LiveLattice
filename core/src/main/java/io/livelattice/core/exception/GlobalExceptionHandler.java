@@ -26,6 +26,12 @@ public class GlobalExceptionHandler {
             .body(new ErrorResponse("forbidden", ex.getMessage()));
     }
 
+    @ExceptionHandler(UnauthorizedException.class)
+    public ResponseEntity<ErrorResponse> handleUnauthorized(UnauthorizedException ex) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+            .body(new ErrorResponse("unauthorized", ex.getMessage()));
+    }
+
     @ExceptionHandler(QuotaExceededException.class)
     public ResponseEntity<ErrorResponse> handleQuotaExceeded(QuotaExceededException ex) {
         return ResponseEntity.status(422)

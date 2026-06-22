@@ -1,6 +1,6 @@
 # Core Domain
 
-Spring Boot backend for workspaces, RBAC, and domain entities.
+Spring Boot backend for authenticated users, workspace RBAC, API keys, and domain entities.
 
 ## Implemented Endpoints
 
@@ -8,7 +8,11 @@ Spring Boot backend for workspaces, RBAC, and domain entities.
 |--------|------|-------------|
 | GET | /health | Service health (status, service name, version) |
 | GET | /ready | Readiness check (database connectivity) |
-| POST | /workspaces | Create a workspace (materializes user if needed) |
+| POST | /internal/auth/users/provision | Idempotently provision authenticated Keycloak claims from Gateway |
+| POST | /auth/keys | Create a workspace-scoped service token |
+| GET | /auth/keys?workspaceId={id} | List API key metadata |
+| DELETE | /auth/keys/{workspaceId}/{keyId} | Revoke an API key |
+| POST | /workspaces | Create a workspace for an already provisioned user |
 | GET | /workspaces | List user's workspaces |
 | GET | /workspaces/{id} | Get workspace details |
 | PATCH | /workspaces/{id} | Update workspace (owner/admin) |
@@ -32,6 +36,14 @@ docker compose exec core wget -qO- 127.0.0.1:8080/health
 - ADMIN: manage members and workspace settings
 - EDITOR: create and edit canvases
 - VIEWER: read-only access
+
+## Auth Boundary
+
+- `/health` and `/ready` are public.
+- Domain requests require either trusted Gateway headers or a valid `X-API-Key`.
+- User records are provisioned only through the internal auth endpoint.
+- Workspace flows no longer create fallback local users.
+- API keys are workspace-scoped, hashed at rest, returned only once, and restricted by both token scope and creator RBAC.
 
 ## Quotas
 

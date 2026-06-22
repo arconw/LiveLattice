@@ -2,88 +2,85 @@
 
 ## Objective
 
-Integrate Keycloak for identity management and implement the auth bridge service for user provisioning and API key management.
+Implement the intended Auth & Identity stage for LiveLattice backend and infrastructure. Keycloak is the identity source of truth, Gateway is the public auth boundary, and Core owns domain RBAC, idempotent user provisioning from authenticated claims, and workspace-scoped service API keys.
 
-## Requirements
+## Version and Path Targets
 
-1. Add Keycloak to `compose.yaml`:
-   - Keycloak 26.x baseline with PostgreSQL backend, using an exact pinned image tag
-   - Pre-configured realm `livelattice` with clients, roles, and users
-   - Import realm configuration from `keycloak/realm-export.json`
-2. Implement `AuthController` in Gateway:
-   - `POST /auth/login` - exchange credentials for tokens via Keycloak OIDC
-   - `POST /auth/social` - social login (Google, GitHub, Microsoft)
-   - `POST /auth/refresh` - refresh token rotation
-   - `POST /auth/logout` - invalidate refresh token
-3. Implement `ApiKeyService` in Core Domain:
-   - MVP scope: workspace-scoped service tokens created and revoked by OWNER/ADMIN users
-   - Generate random 32-byte tokens
-   - Show the plaintext token only once on creation
-   - Store only a bcrypt or Argon2 hash in PostgreSQL
-   - Store workspace id, creator id, scoped permissions, status, last used timestamp, and optional expiration
-   - Validate requests with `X-API-Key` header
-   - Cache validated keys in Redis (5 min TTL)
-4. Implement Gateway/Core auth boundary:
-   - Gateway `AuthService` owns public OIDC login, refresh, and logout flows
-   - Core `UserService` idempotently provisions users from authenticated Keycloak claims
-   - `users.external_subject` must equal the Keycloak `sub` claim
-   - User provisioning must happen through the auth/login flow only, including local development
-   - Do not keep a fallback that creates users outside the auth flow
-   - Gateway passes trusted internal identity headers to Core after validation
-   - Core keeps domain RBAC and does not duplicate public OIDC login logic
-5. Implement `SessionCache`:
-   - Redis-backed active session map (user_id -> {workspace_ids, roles})
-   - 15 min TTL, refreshed on each request
-   - Invalidate on logout or role change
-6. Add MFA and social-login backend support:
-   - Configure Keycloak realm support for social identity providers where credentials are available through environment variables
-   - Expose backend integration contracts for login initiation and callback handling as needed by Gateway
-   - `POST /auth/mfa/setup` - generate TOTP secret or WebAuthn challenge
-   - `POST /auth/mfa/verify` - verify and enable MFA
-   - Frontend UX is out of scope; verify backend behavior with Keycloak admin/test flows and curl where possible
-7. Write integration tests using Testcontainers (Keycloak + PostgreSQL + Redis)
+- Keycloak image: `quay.io/keycloak/keycloak:26.4.4`
+- Realm name: `livelattice`
+- Realm export path: `infra/keycloak/livelattice-realm.json`
+- Realm import mount: `./infra/keycloak:/opt/keycloak/data/import:ro`
+- Gateway service: `gateway/`, NestJS/Fastify
+- Core service: `core/`, Java 21 Spring Boot 4.1.0
+- Local runtime: Docker Compose only
 
+## Intended Requirements
 
-## Implementation Decisions
-
-- Keycloak is the identity source of truth.
-- Version a Keycloak realm export in the repository so local auth can be recreated deterministically.
-- Direct Core access after Auth is closed by default. Local development may use only an explicit dev profile or internal header path where identity still comes from the auth flow.
-- Stage 7 Realtime Collaboration depends on this stage and must run after JWT authentication is implemented.
-- API keys are workspace-scoped service tokens for the MVP, not general user API keys.
+1. Keycloak local identity setup:
+   - Use Keycloak 26.4.4 with PostgreSQL backing store.
+   - Import a deterministic `livelattice` realm from the versioned realm export.
+   - Include clients for browser login and backend service integration.
+   - Include realm roles and deterministic development users for smoke tests.
+   - Keep production secrets out of git. Development-only values must be clearly local and replaceable through environment variables where supported.
+2. Gateway auth boundary:
+   - Implement `POST /auth/login` for Keycloak OIDC token exchange.
+   - Implement `POST /auth/refresh` for refresh token rotation.
+   - Implement `POST /auth/logout` for Keycloak session logout.
+   - Implement backend contracts for social login initiation.
+   - Implement backend contracts for MFA setup/verification delegated to Keycloak where full frontend UX is unavailable.
+   - Validate bearer JWTs with Keycloak JWKS.
+   - Cache JWKS/session data through Redis when enabled.
+   - Protect `/api/core/*` after auth.
+   - Strip client-supplied trusted internal headers and inject trusted identity headers only after validation.
+   - Allow `X-API-Key` on `/api/core/*` to pass to Core for service token validation.
+3. Core user provisioning:
+   - Store `users.external_subject` as the Keycloak `sub` claim.
+   - Provision users idempotently only through the Gateway login/refresh auth flow via an internal Core endpoint.
+   - Do not keep local fallback user creation in domain flows.
+   - Normal trusted domain requests must require the user to already exist.
+4. Core auth boundary:
+   - Close direct Core access by default.
+   - Keep `/health` and `/ready` public.
+   - Require either the trusted Gateway internal token or a valid `X-API-Key` for domain requests.
+   - Keep public OIDC login logic out of Core.
+5. API keys:
+   - Implement workspace-scoped service tokens created and revoked by OWNER/ADMIN users.
+   - Generate 32 random bytes for each token secret.
+   - Return plaintext only once on creation.
+   - Store only bcrypt or Argon2 hashes in PostgreSQL.
+   - Store workspace id, creator id, scoped permissions, status, last used timestamp, optional expiration, creation timestamp, and revocation timestamp.
+   - Validate `X-API-Key` in Core.
+   - Cache validated key metadata in Redis for 5 minutes.
+   - Enforce token workspace scope and token permissions in addition to creator RBAC.
+6. Tests:
+   - Gateway tests for login, JWKS validation, provisioning call, proxy protection, API key pass-through, and health/readiness.
+   - Core tests for UserService, auth boundary behavior, API key creation/validation/revocation, and permission scoping.
+   - Docker build paths must run relevant tests.
+7. Docker Compose verification:
+   - `docker compose config`
+   - `docker compose build gateway core`
+   - `docker compose up -d postgres redis keycloak core gateway`
+   - Gateway `/health` and `/ready`
+   - Core `/health` and `/ready`
+   - login through Gateway with a seeded Keycloak user
+   - unauthenticated protected Core proxy request rejected
+   - valid bearer token protected Core proxy request accepted
+   - user provisioning verified after login
+   - API key create/list/revoke verified
+   - valid API key request accepted
+   - invalid or revoked API key request rejected
 
 ## Constraints
 
-- Do not implement frontend code
-- Do not commit changes
-- Do not leave comments in code
-- Docker Compose must be the only local execution path
-- No secrets in code - all credentials via environment variables
-- JWKS response must be cached in Redis (not fetched on every request)
+- Backend and infrastructure only.
+- Do not implement frontend code.
+- Docker Compose is the mandatory local execution path.
+- Do not leave comments or TODOs in code files.
+- Do not commit, tag, or push until tests, Docker Compose verification, smoke checks, diff checks, and final docs review are green.
+- Use forward-only Flyway migrations. Do not rewrite old applied migrations.
+- New migrations must use UUID-compatible foreign keys for the Compose schema.
+- Codex and OpenCode must be used only through MCP harnesses, not direct shell CLIs.
 
-## Verification
+## Documentation Rule
 
-```bash
-# Start with Keycloak
-docker compose up -d
-
-# Wait for Keycloak to be ready
-docker compose exec keycloak /opt/keycloak/bin/kcadm.sh config credentials --server http://localhost:8080 --realm master --user admin --password admin
-
-# Login
-curl -X POST http://localhost:3000/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"test@example.com","password":"test123"}'
-
-# Create API key
-curl -X POST http://localhost:3000/auth/keys \
-  -H "Authorization: Bearer <token>" \
-  -d '{"name":"ci-key","permissions":["canvas:read"]}'
-
-# Use API key
-curl http://localhost:3000/api/core/canvases \
-  -H "X-API-Key: <generated_key>"
-
-# Run integration tests
-cd core && ./gradlew test --tests *AuthIntegration*
-```
+Implementation docs describe what is actually implemented. Prompts describe the intended implementation target. Before commit and push, verify the final implementation against both this prompt and the auth technical design.

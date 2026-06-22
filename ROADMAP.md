@@ -9,6 +9,7 @@ This roadmap tracks implementation status, next backend stages, and working rule
 | Architecture documentation | Done | `664d036` | none | Architecture, tech design, flows, and implementation prompts. |
 | Stage 1: Infrastructure & Docker Compose | Done | `6515286` | `v0.1.0-infra` | Local infra stack, observability stack, test compose, backend placeholders. |
 | Stage 2: API Gateway | Done | `bc1535d` | `v0.2.0-gateway` | NestJS/Fastify gateway, health, readiness, metrics, proxying, rate limit, optional JWT boundary. |
+| Stage 3: Auth & Identity | Done | release commit | `v0.6.0-auth-identity` | Keycloak-backed auth, Gateway JWT boundary, Core user provisioning, workspace-scoped API keys, Docker Compose smoke verified. |
 | Stage 4: Core Domain - Workspaces & RBAC | Done | `b4edbca` | `v0.3.0-core` | Java 21 Spring Boot 4.1.0 service, workspace/member APIs, RBAC, quotas, Flyway migrations. |
 | Stage 5: Core Domain - Canvas & Documents | Done | `d33b36e` | `v0.4.0-canvas-documents` | Canvas CRUD, snapshots backed by MinIO, comments, templates, events, Docker Compose smoke verified. |
 | Stage 6: Core Domain - Dashboard & Analytics | Done | `aa48406` | `v0.5.0-dashboard-analytics` | Dashboard CRUD, widgets, encrypted data sources, Redis query cache, ClickHouse init, Docker Compose smoke verified. |
@@ -19,7 +20,7 @@ This roadmap tracks implementation status, next backend stages, and working rule
 |---:|---|---|---|---|
 | 1 | Infrastructure & Docker Compose | Done | `docs/prompts/infra-compose.md` | `docs/techDesign/infra-compose/infra-compose-design.md` |
 | 2 | API Gateway | Done | `docs/prompts/api-gateway.md` | `docs/techDesign/api-gateway/api-gateway-design.md` |
-| 3 | Auth & Identity | Next | `docs/prompts/auth-identity.md` | `docs/techDesign/auth-identity/auth-identity-design.md` |
+| 3 | Auth & Identity | Done | `docs/prompts/auth-identity.md` | `docs/techDesign/auth-identity/auth-identity-design.md` |
 | 4 | Core Domain - Workspaces & RBAC | Done | `docs/prompts/workspaces-rbac.md` | `docs/techDesign/workspaces-rbac/workspaces-rbac-design.md` |
 | 5 | Core Domain - Canvas & Documents | Done | `docs/prompts/canvas-documents.md` | `docs/techDesign/canvas-documents/canvas-documents-design.md` |
 | 6 | Core Domain - Dashboard & Analytics | Done | `docs/prompts/dashboard-analytics.md` | `docs/techDesign/dashboard-analytics/dashboard-analytics-design.md` |
@@ -36,8 +37,8 @@ This roadmap tracks implementation status, next backend stages, and working rule
 
 Implemented services:
 
-- `gateway`: real service image built from `gateway/`.
-- `core`: real Java Spring Boot service image built from `core/`, including workspace/RBAC, canvas/document APIs, and dashboard/analytics APIs.
+- `gateway`: real service image built from `gateway/`, including the external JWT auth boundary, Keycloak login/refresh/logout, trusted identity header injection, API key proxying, and protected Core proxy paths.
+- `core`: real Java Spring Boot service image built from `core/`, including workspace/RBAC, canvas/document APIs, dashboard/analytics APIs, authenticated user provisioning, and workspace-scoped API key lifecycle and enforcement.
 
 Remaining placeholder services in `compose.yaml`:
 
@@ -50,15 +51,13 @@ Remaining placeholder services in `compose.yaml`:
 
 ## Recommended Next Work
 
-1. Implement Stage 3: Auth & Identity before Stage 7 Realtime Collaboration.
-2. Use Keycloak as the identity source of truth and complete Gateway/Core auth integration.
-3. Provision users through the auth/login path only, with no development fallback that creates users outside auth.
-4. Implement workspace-scoped API keys unless later design review changes the scope.
-5. Keep all database schema changes forward-only through Flyway migrations.
-6. Verify through Docker Compose, including gateway auth paths and protected core proxy paths.
-7. Commit and push only after tests, image build, Compose startup, and smoke checks pass.
+1. Implement Stage 7: Realtime Collaboration on top of the Stage 3 JWT authentication boundary.
+2. Use the Stage 3 JWT boundary for WebSocket connection authentication.
+3. Keep all database schema changes forward-only through Flyway migrations.
+4. Verify through Docker Compose, including gateway auth paths, protected service proxy paths, and at least one permission or validation failure.
+5. Commit and push only after tests, image build, Compose startup, smoke checks, diff checks, and docs review pass.
 
-Stage 3 Auth & Identity is next because Stage 7 Realtime Collaboration depends on JWT-based connection authentication. Keycloak is available in Compose, but full JWT/identity integration is not yet implemented. Stage 6 is complete and verified through direct core and gateway smoke checks.
+Stage 3 Auth & Identity is complete and verified. Stage 7 Realtime Collaboration depends on the Stage 3 JWT-based authentication boundary. Stage 6 is complete and verified through direct core and gateway smoke checks.
 
 ## Auth Implementation Decisions
 
