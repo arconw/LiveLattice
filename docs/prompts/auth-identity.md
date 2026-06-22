@@ -16,22 +16,41 @@ Integrate Keycloak for identity management and implement the auth bridge service
    - `POST /auth/refresh` - refresh token rotation
    - `POST /auth/logout` - invalidate refresh token
 3. Implement `ApiKeyService` in Core Domain:
-   - Generate API keys (32-byte random hex)
-   - Store bcrypt hash in PostgreSQL
-   - Validate API key on requests with `X-API-Key` header
+   - MVP scope: workspace-scoped service tokens created and revoked by OWNER/ADMIN users
+   - Generate random 32-byte tokens
+   - Show the plaintext token only once on creation
+   - Store only a bcrypt or Argon2 hash in PostgreSQL
+   - Store workspace id, creator id, scoped permissions, status, last used timestamp, and optional expiration
+   - Validate requests with `X-API-Key` header
    - Cache validated keys in Redis (5 min TTL)
-4. Implement Auth Bridge (Spring Boot service):
-   - Webhook listener for Keycloak events (user registration, update, delete)
-   - Provision users in PostgreSQL `users` table
-   - Sync roles between Keycloak and application RBAC
+4. Implement Gateway/Core auth boundary:
+   - Gateway `AuthService` owns public OIDC login, refresh, and logout flows
+   - Core `UserService` idempotently provisions users from authenticated Keycloak claims
+   - `users.external_subject` must equal the Keycloak `sub` claim
+   - User provisioning must happen through the auth/login flow only, including local development
+   - Do not keep a fallback that creates users outside the auth flow
+   - Gateway passes trusted internal identity headers to Core after validation
+   - Core keeps domain RBAC and does not duplicate public OIDC login logic
 5. Implement `SessionCache`:
    - Redis-backed active session map (user_id -> {workspace_ids, roles})
    - 15 min TTL, refreshed on each request
    - Invalidate on logout or role change
-6. Add MFA endpoints:
+6. Add MFA and social-login backend support:
+   - Configure Keycloak realm support for social identity providers where credentials are available through environment variables
+   - Expose backend integration contracts for login initiation and callback handling as needed by Gateway
    - `POST /auth/mfa/setup` - generate TOTP secret or WebAuthn challenge
    - `POST /auth/mfa/verify` - verify and enable MFA
+   - Frontend UX is out of scope; verify backend behavior with Keycloak admin/test flows and curl where possible
 7. Write integration tests using Testcontainers (Keycloak + PostgreSQL + Redis)
+
+
+## Implementation Decisions
+
+- Keycloak is the identity source of truth.
+- Version a Keycloak realm export in the repository so local auth can be recreated deterministically.
+- Direct Core access after Auth is closed by default. Local development may use only an explicit dev profile or internal header path where identity still comes from the auth flow.
+- Stage 7 Realtime Collaboration depends on this stage and must run after JWT authentication is implemented.
+- API keys are workspace-scoped service tokens for the MVP, not general user API keys.
 
 ## Constraints
 
