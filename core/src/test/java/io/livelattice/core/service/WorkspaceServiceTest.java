@@ -75,16 +75,13 @@ class WorkspaceServiceTest {
     }
 
     @Test
-    void create_shouldMaterializeUserIfNotExists() {
+    void create_shouldRejectUnknownUser() {
         when(workspaceRepository.existsBySlugAndDeletedAtIsNull("ws")).thenReturn(false);
         when(userRepository.findByExternalSubject(userId)).thenReturn(Optional.empty());
-        when(userRepository.save(any())).thenAnswer(i -> i.getArgument(0));
-        when(workspaceRepository.save(any())).thenAnswer(i -> i.getArgument(0));
-        when(memberRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
-        workspaceService.create(new CreateWorkspaceRequest("WS", "ws"), userId);
+        assertThrows(NotFoundException.class, () -> workspaceService.create(new CreateWorkspaceRequest("WS", "ws"), userId));
 
-        verify(userRepository).save(any());
+        verify(userRepository, never()).save(any());
     }
 
     @Test

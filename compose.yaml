@@ -172,6 +172,17 @@ services:
       context: ./gateway
     environment:
       PORT: 3000
+      AUTH_REQUIRED: "true"
+      AUTH_ISSUER: http://keycloak:8080/realms/livelattice
+      AUTH_JWKS_URI: http://keycloak:8080/realms/livelattice/protocol/openid-connect/certs
+      AUTH_TOKEN_ENDPOINT: http://keycloak:8080/realms/livelattice/protocol/openid-connect/token
+      AUTH_LOGOUT_ENDPOINT: http://keycloak:8080/realms/livelattice/protocol/openid-connect/logout
+      AUTH_CLIENT_ID: livelattice-web
+      CORE_PROVISION_URL: http://core:8080/internal/auth/users/provision
+      INTERNAL_AUTH_SECRET: ${INTERNAL_AUTH_SECRET:-livelattice_internal_dev_secret}
+      SESSION_CACHE_ENABLED: "true"
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
     ports:
       - "${GATEWAY_PORT:-3000}:3000"
     depends_on:
@@ -180,6 +191,10 @@ services:
       redis:
         condition: service_healthy
       kafka:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+      core:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health"]
@@ -212,6 +227,8 @@ services:
       LIVELATTICE_SNAPSHOTS_ACCESS_KEY: ${MINIO_ROOT_USER:-livelattice}
       LIVELATTICE_SNAPSHOTS_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-livelattice_dev_password}
       LIVELATTICE_SNAPSHOTS_BUCKET: ${MINIO_SNAPSHOTS_BUCKET:-livelattice-snapshots}
+      INTERNAL_AUTH_SECRET: ${INTERNAL_AUTH_SECRET:-livelattice_internal_dev_secret}
+      API_KEY_CACHE_TTL_SECONDS: 300
     ports:
       - "${CORE_PORT:-8080}:8080"
     depends_on:
