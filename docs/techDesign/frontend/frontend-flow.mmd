@@ -1,0 +1,43 @@
+flowchart TB
+    Browser[Browser Web App] --> Shell[Workspace Graph Shell]
+    Shell --> Auth[Auth Session Provider]
+    Shell --> Command[Command Palette]
+    Shell --> Router[Route Modules]
+
+    Auth --> Gateway[API Gateway]
+    Command --> SearchClient[Search Client]
+    Router --> Workspace[Workspace Routes]
+    Router --> Canvas[Canvas Editor]
+    Router --> Dashboards[Dashboard UI]
+    Router --> Jobs[Jobs UI]
+    Router --> Notifications[Notifications UI]
+    Router --> Audit[Audit UI]
+
+    Workspace --> CoreClient[Core API Client]
+    Canvas --> CoreClient
+    Canvas --> RealtimeClient[Realtime Socket Client]
+    Canvas --> ImportExportClient[Import Export Client]
+    Dashboards --> CoreClient
+    SearchClient --> Gateway
+    Jobs --> ImportExportClient
+    Notifications --> NotificationsClient[Notifications Client]
+    Audit --> AuditClient[Audit Client]
+
+    CoreClient --> Gateway
+    RealtimeClient --> Gateway
+    ImportExportClient --> Gateway
+    NotificationsClient --> Gateway
+    AuditClient --> Gateway
+
+    Gateway --> Core[Core Domain]
+    Gateway --> Realtime[Realtime Service]
+    Gateway --> Search[Search Service]
+    Gateway --> ImportExport[Import Export Service]
+    Gateway --> Notify[Notifications Service]
+    Gateway --> AuditService[Audit Log Service]
+
+    Shell -.uses tokens from.-> Ctx[.ctx mock design]
+    Canvas -.preserves.-> CanvasContract[Canvas JSONB contract]
+    Dashboards -.preserves.-> DashboardContract[12-column dashboard and widget query contracts]
+    SearchClient -.preserves.-> SearchContract[facets, highlights, search_after]
+    RealtimeClient -.preserves.-> RealtimeContract[room, ops, awareness protocol]

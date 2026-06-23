@@ -1,12 +1,13 @@
 # Architecture Documentation
 
-LiveLattice architecture is split into three tiers: a Node.js (NestJS) gateway and realtime layer, a Java (Spring Boot) core domain layer, and a unified observability/infra layer.
+LiveLattice architecture is split into four tiers: a frontend web app, a Node.js (NestJS) gateway and realtime layer, a Java (Spring Boot) core domain/integration layer, and a unified observability/infra layer.
 
 ## Document Index
 
 | Document | Description |
 |---|---|
 | [System Architecture](overview/system-architecture.md) | High-level component diagram, data flows, deployment topology |
+| [Frontend Architecture](frontend/frontend-architecture.md) | Web app shell, route model, frontend state ownership, and backend contract boundaries |
 | [Data Architecture](data/data-architecture.md) | Storage strategy, partitioning, caching, indexing |
 | [Security & Tenancy](security/security-and-tenancy.md) | Authentication, RBAC, mTLS, encryption, isolation |
 | [Realtime Collaboration](realtime/realtime-collaboration.md) | WebSocket rooms, OT/CRDT, presence, broadcasting |

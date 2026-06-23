@@ -125,6 +125,14 @@ graph TB
     TEMPO --> GRAF
 ```
 
+## Frontend Application Layer
+
+The planned frontend is a React + TypeScript web app that sits in front of the Gateway. It owns the app shell, workspace navigation, lattice cockpit, canvas editor, dashboard UI, search UI, job surfaces, notifications, audit views, accessibility, and frontend contract fixtures.
+
+The frontend must call the Gateway only. It must not call internal service hostnames or set trusted identity headers. Its main contract responsibility is to preserve workspace scoping, RBAC-driven UI states, canvas JSONB content shape, realtime room/awareness protocol, dashboard widget/query contracts, search facets/highlights, import/export job semantics, notification preference vocabulary, and audit read-only behavior.
+
+Detailed frontend architecture lives in `docs/architect/frontend/frontend-architecture.md`; detailed component and contract design lives in `docs/techDesign/frontend/frontend-design.md`.
+
 ## Deployment Topology
 
 ```

@@ -1,11 +1,12 @@
 # LiveLattice
 
-Collaborative diagrams, dashboards, charts, and real-time data integrations - backend and infrastructure.
+Collaborative diagrams, dashboards, charts, and real-time data integrations - frontend, backend, and infrastructure.
 
 ## Tech Stack
 
 | Layer | Technology |
 |---|---|
+| Frontend | React + TypeScript web app (planned Stage 15) |
 | Gateway / Realtime | Node.js (NestJS 11, Fastify, Socket.IO) |
 | Core Domain | Java 21 (Spring Boot 4.x baseline, exact patch pinned during implementation) |
 | Identity | Keycloak 26.x (OAuth2/OIDC) |
@@ -82,6 +83,7 @@ Local stack entry points:
 |---|---|
 | [Architecture Overview](docs/architect/README.md) | System architecture, data flow, deployment topology |
 | [System Architecture](docs/architect/overview/system-architecture.md) | Component diagram, request flows, design decisions |
+| [Frontend Architecture](docs/architect/frontend/frontend-architecture.md) | Web app shell, route model, contract boundaries, canvas/dashboard/search interaction architecture |
 | [Data Architecture](docs/architect/data/data-architecture.md) | Storage strategy, schemas, indexing, caching, partitioning, retention |
 | [Security & Tenancy](docs/architect/security/security-and-tenancy.md) | Auth, RBAC, multi-tenancy, encryption, secrets management |
 | [Realtime Collaboration](docs/architect/realtime/realtime-collaboration.md) | WebSocket, CRDT, presence, broadcasting |
@@ -108,6 +110,7 @@ Local stack entry points:
 | Background Jobs | [Design](docs/techDesign/background-jobs/background-jobs-design.md) | [Flow](docs/techDesign/background-jobs/background-jobs-flow.mmd) |
 | Health & Observability | [Design](docs/techDesign/health-observability/health-observability-design.md) | [Flow](docs/techDesign/health-observability/health-observability-flow.mmd) |
 | Infrastructure & Compose | [Design](docs/techDesign/infra-compose/infra-compose-design.md) | [Flow](docs/techDesign/infra-compose/infra-compose-flow.mmd) |
+| Frontend Web App | [Design](docs/techDesign/frontend/frontend-design.md) | [Flow](docs/techDesign/frontend/frontend-flow.mmd) |
 
 ### Implementation Prompts
 
@@ -127,3 +130,9 @@ Local stack entry points:
 | 12 | Background Jobs | [Prompt](docs/prompts/background-jobs.md) |
 | 13 | Health & Observability | [Prompt](docs/prompts/health-observability.md) |
 | 14 | Performance Testing (k6) | [Prompt](docs/prompts/k6-performance.md) |
+| 15A | Frontend Foundation & Shell | [Prompt](docs/prompts/frontend-foundation-shell.md) |
+| 15B | Frontend Auth & Workspaces | [Prompt](docs/prompts/frontend-auth-workspaces.md) |
+| 15C | Frontend Canvas & Realtime | [Prompt](docs/prompts/frontend-canvas-realtime.md) |
+| 15D | Frontend Dashboards & Data | [Prompt](docs/prompts/frontend-dashboards-data.md) |
+| 15E | Frontend Search, Jobs, Notifications & Audit | [Prompt](docs/prompts/frontend-activity-search.md) |
+| 15F | Frontend Quality & Compose | [Prompt](docs/prompts/frontend-quality-compose.md) |

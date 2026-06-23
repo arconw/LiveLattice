@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="en">
+<body>
+<h1 th:text="${title}">Notification</h1>
+<p th:text="${body}"></p>
+<p th:if="${actionUrl != null and actionUrl != ''}">
+    <a th:href="${actionUrl}">Open</a>
+</p>
+</body>
+</html>

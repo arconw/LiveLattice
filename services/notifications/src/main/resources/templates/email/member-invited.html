@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="en">
+<body>
+<h1 th:text="${title}">Workspace invitation</h1>
+<p th:text="${body}"></p>
+<p th:if="${actionUrl != null and actionUrl != ''}">
+    <a th:href="${actionUrl}">Accept invitation</a>
+</p>
+</body>
+</html>

@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en">
+<body>
+<h1>LiveLattice notifications</h1>
+<div th:each="notification : ${notifications}">
+    <h2 th:text="${notification.title()}">Notification</h2>
+    <p th:text="${notification.body()}"></p>
+    <p th:if="${notification.actionUrl() != null and notification.actionUrl() != ''}">
+        <a th:href="${notification.actionUrl()}">Open</a>
+    </p>
+</div>
+</body>
+</html>

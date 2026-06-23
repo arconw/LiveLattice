@@ -1,0 +1,67 @@
+spring:
+  application:
+    name: notifications
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:livelattice}
+    username: ${POSTGRES_USER:livelattice}
+    password: ${POSTGRES_PASSWORD:livelattice_dev_password}
+    hikari:
+      maximum-pool-size: 4
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+  kafka:
+    bootstrap-servers: ${KAFKA_BROKERS:localhost:9092}
+    consumer:
+      group-id: ${NOTIFICATIONS_KAFKA_GROUP_ID:livelattice-notifications}
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+  thymeleaf:
+    cache: true
+
+server:
+  port: 8082
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+livelattice:
+  auth:
+    internal-secret: ${INTERNAL_AUTH_SECRET:livelattice_internal_dev_secret}
+  notifications:
+    email-from: ${NOTIFICATIONS_EMAIL_FROM:notifications@livelattice.local}
+    deduplication-ttl: ${NOTIFICATIONS_DEDUPLICATION_TTL:10m}
+    rate-limit-window: ${NOTIFICATIONS_RATE_LIMIT_WINDOW:1h}
+    rate-limit-max: ${NOTIFICATIONS_RATE_LIMIT_MAX:1000}
+    webhook-max-per-user: ${NOTIFICATIONS_WEBHOOK_MAX_PER_USER:10}
+    webhook-max-attempts: ${NOTIFICATIONS_WEBHOOK_MAX_ATTEMPTS:5}
+    redis-stream-key: ${NOTIFICATIONS_REDIS_STREAM_KEY:notifications:in-app}
+    digest-scan-interval: ${NOTIFICATIONS_DIGEST_SCAN_INTERVAL:5m}
+    kafka:
+      enabled: ${NOTIFICATIONS_KAFKA_ENABLED:true}
+      topics: ${NOTIFICATIONS_KAFKA_TOPICS:member.invited,canvas.comment,canvas.@mention,canvas.export.complete,workspace.quota.warning,system.announcement}
+      consumer-group-id: ${NOTIFICATIONS_KAFKA_GROUP_ID:livelattice-notifications}
+      output-topic: ${NOTIFICATIONS_KAFKA_OUTPUT_TOPIC:notification.created}

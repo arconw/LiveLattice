@@ -180,6 +180,7 @@ services:
       AUTH_CLIENT_ID: livelattice-web
       CORE_PROVISION_URL: http://core:8080/internal/auth/users/provision
       SEARCH_URL: http://search:8081
+      NOTIFICATIONS_URL: http://notifications:8082
       IMPORT_EXPORT_URL: http://import-export:8083
       INTERNAL_AUTH_SECRET: ${INTERNAL_AUTH_SECRET:-livelattice_internal_dev_secret}
       SESSION_CACHE_ENABLED: "true"
@@ -200,6 +201,8 @@ services:
       core:
         condition: service_healthy
       search:
+        condition: service_healthy
+      notifications:
         condition: service_healthy
       import-export:
         condition: service_healthy
@@ -311,9 +314,46 @@ services:
     networks:
       - livelattice
 
+  mailpit:
+    image: axllent/mailpit:v1.24
+    environment:
+      MP_MAX_MESSAGES: "5000"
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+    ports:
+      - "${MAILPIT_SMTP_PORT:-1025}:1025"
+      - "${MAILPIT_UI_PORT:-8025}:8025"
+    volumes:
+      - mailpit_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8025/api/v1/messages >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - livelattice
+
   notifications:
-    image: busybox:1.37
-    command: sh -c "mkdir -p /www && printf notifications-ok > /www/health && httpd -f -p 8082 -h /www"
+    build:
+      context: ./services/notifications
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-livelattice}
+      POSTGRES_USER: ${POSTGRES_USER:-livelattice}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-livelattice_dev_password}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KAFKA_BROKERS: kafka:9092
+      INTERNAL_AUTH_SECRET: ${INTERNAL_AUTH_SECRET:-livelattice_internal_dev_secret}
+      MAIL_HOST: ${MAIL_HOST:-mailpit}
+      MAIL_PORT: ${MAIL_PORT:-1025}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      NOTIFICATIONS_EMAIL_FROM: ${NOTIFICATIONS_EMAIL_FROM:-notifications@livelattice.local}
+      NOTIFICATIONS_KAFKA_TOPICS: ${NOTIFICATIONS_KAFKA_TOPICS:-member.invited,canvas.comment,canvas.@mention,canvas.export.complete,workspace.quota.warning,system.announcement}
+      NOTIFICATIONS_KAFKA_GROUP_ID: ${NOTIFICATIONS_KAFKA_GROUP_ID:-livelattice-notifications}
     ports:
       - "${NOTIFICATIONS_PORT:-8082}:8082"
     depends_on:
@@ -323,9 +363,14 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      mailpit:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8082/health"]
-      <<: *placeholder-health
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8082/ready"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
     networks:
       - livelattice
 
@@ -409,6 +454,7 @@ volumes:
   clickhouse_data:
   opensearch_data:
   minio_data:
+  mailpit_data:
 
 networks:
   livelattice:
