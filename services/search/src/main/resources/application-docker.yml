@@ -1,0 +1,11 @@
+spring:
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: ${REDIS_PORT:6379}
+  kafka:
+    bootstrap-servers: ${KAFKA_BROKERS:kafka:9092}
+
+livelattice:
+  search:
+    opensearch-url: ${OPENSEARCH_URL:http://opensearch:9200}

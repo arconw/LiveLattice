@@ -26,7 +26,7 @@ This roadmap tracks implementation status, next backend stages, and working rule
 | 6 | Core Domain - Dashboard & Analytics | Done | `docs/prompts/dashboard-analytics.md` | `docs/techDesign/dashboard-analytics/dashboard-analytics-design.md` |
 | 7 | Realtime Collaboration | Done | `docs/prompts/realtime.md` | `docs/techDesign/realtime/realtime-design.md` |
 | 8 | Import & Export | Done | `docs/prompts/import-export.md` | `docs/techDesign/import-export/import-export-design.md` |
-| 9 | Search | Pending | `docs/prompts/search.md` | `docs/techDesign/search/search-design.md` |
+| 9 | Search | Done | `docs/prompts/search.md` | `docs/techDesign/search/search-design.md` |
 | 10 | Notifications | Pending | `docs/prompts/notifications.md` | `docs/techDesign/notifications/notifications-design.md` |
 | 11 | Audit Log | Pending | `docs/prompts/audit-log.md` | `docs/techDesign/audit-log/audit-log-design.md` |
 | 12 | Background Jobs | Pending | `docs/prompts/background-jobs.md` | `docs/techDesign/background-jobs/background-jobs-design.md` |
@@ -41,17 +41,17 @@ Implemented services:
 - `core`: real Java Spring Boot service image built from `core/`, including workspace/RBAC, canvas/document APIs, dashboard/analytics APIs, authenticated user provisioning, and workspace-scoped API key lifecycle and enforcement.
 - `realtime`: real Node 24 / TypeScript service image built from `realtime/`, including Socket.IO namespace auth through the Gateway JWT boundary, room membership via Redis, Yjs-based collaboration with snapshots and Kafka persistence, presence awareness, and cross-instance Redis pub/sub.
 - `import-export`: real Java 21 / Spring Boot 4.1.0 service image built from `services/import-export/`, including sync and async canvas import/export (SVG, draw.io, PNG, PDF, JSON), dashboard CSV/XLSX/JSON export, batch jobs tracked in Redis with owner/workspace scoping, Kafka async events, MinIO artifact storage, and explicit Flyway migration wired through a service-specific history table (`import_export_flyway_history`) to coexist with the core schema migrations in the same Postgres database.
+- `search`: real Java 21 / Spring Boot 4.1.0 service image built from `services/search/`, including OpenSearch-backed full-text search and suggestions, deterministic index initialization, Kafka-based bulk indexing, Redis suggestion caching, admin-gated reindex reset, Docker readiness over OpenSearch/Kafka/Redis/indexes, and protected Gateway routing for `/api/search/*`.
 
 Remaining placeholder services in `compose.yaml`:
 
-- `search`
 - `notifications`
 - `audit-log`
 - `background-jobs`
 
 ## Recommended Next Work
 
-1. Pick up Stage 9: Search once this branch lands.
+1. Pick up Stage 10: Notifications once this branch lands.
 2. Keep all database schema changes forward-only through Flyway migrations.
 3. Verify through Docker Compose, including gateway auth paths, protected service proxy paths, and at least one permission or validation failure.
 4. Commit and push only after tests, image build, Compose startup, smoke checks, diff checks, and docs review pass.
@@ -59,6 +59,8 @@ Remaining placeholder services in `compose.yaml`:
 Stage 7 Realtime Collaboration is complete and verified.
 
 Stage 8 Import & Export is complete and verified: the import-export image builds with unit tests in the Docker build path, the full Testcontainers suite for Postgres, Redis, Kafka, and MinIO passes, the Compose service starts healthy after Core, `/health` returns `UP`, `/ready` reports healthy storage, queue, and cache dependencies, the Gateway protects `/api/import-export/*` and returns 401 without a bearer token, SVG import/export plus unsupported-content validation are covered by integration tests, import/export operations enforce core workspace RBAC, async job state/download endpoints are scoped by job owner or workspace RBAC, and uploaded SVG/draw.io XML is parsed with DTD and external entity access disabled. Core Flyway migrations and import-export Flyway migrations are isolated using separate history tables.
+
+Stage 9 Search is complete and verified: the search and core images build with unit tests in the Docker build path, Compose starts Core, Search, and Gateway healthy after OpenSearch, Kafka, Redis, and Postgres, `/health` returns `UP`, `/ready` reports healthy search, queue, cache, and index checks, six indexes are initialized deterministically with the LiveLattice OpenSearch ISM policy attached, Core publishes canvas/comment search events to Kafka after commits, Core-created canvases are consumed and bulk-indexed into OpenSearch, search returns highlighted/faceted results, suggestions are cached through Redis, validation returns 400 for invalid types, direct Search endpoints reject missing trusted Gateway identity with 401, trusted non-admin reindex returns 403, trusted admin reindex rebuilds Core-backed documents from PostgreSQL, and the Gateway protects `/api/search/*` with a 401 response when no bearer token is provided.
 
 ## Auth Implementation Decisions
 

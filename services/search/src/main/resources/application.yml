@@ -1,0 +1,56 @@
+spring:
+  application:
+    name: search
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:livelattice}
+    username: ${POSTGRES_USER:livelattice}
+    password: ${POSTGRES_PASSWORD:livelattice_dev_password}
+    hikari:
+      maximum-pool-size: 4
+  kafka:
+    bootstrap-servers: ${KAFKA_BROKERS:localhost:9092}
+    consumer:
+      group-id: ${SEARCH_KAFKA_GROUP_ID:livelattice-search-indexer}
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
+server:
+  port: 8081
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+livelattice:
+  auth:
+    internal-secret: ${INTERNAL_AUTH_SECRET:livelattice_internal_dev_secret}
+    reindex-admin-role: ${SEARCH_REINDEX_ADMIN_ROLE:admin}
+  search:
+    opensearch-url: ${OPENSEARCH_URL:http://localhost:9200}
+    canvas-index-name: ${SEARCH_CANVAS_INDEX:canvases}
+    comment-index-name: ${SEARCH_COMMENT_INDEX:comments}
+    document-index-name: ${SEARCH_DOCUMENT_INDEX:documents}
+    dashboard-index-name: ${SEARCH_DASHBOARD_INDEX:dashboards}
+    template-index-name: ${SEARCH_TEMPLATE_INDEX:templates}
+    user-index-name: ${SEARCH_USER_INDEX:users}
+    lifecycle-policy-name: ${SEARCH_LIFECYCLE_POLICY_NAME:livelattice-search-lifecycle}
+    suggest-cache-ttl: ${SEARCH_SUGGEST_CACHE_TTL:5m}
+    suggest-cache-size: ${SEARCH_SUGGEST_CACHE_SIZE:10}
+    bulk-flush-interval: ${SEARCH_BULK_FLUSH_INTERVAL:5s}
+    bulk-batch-size: ${SEARCH_BULK_BATCH_SIZE:1000}
+    search-timeout-seconds: ${SEARCH_TIMEOUT_SECONDS:5}
+    suggest-timeout-seconds: ${SEARCH_SUGGEST_TIMEOUT_SECONDS:1}
+    page-size: ${SEARCH_PAGE_SIZE:20}
+    max-page-size: ${SEARCH_MAX_PAGE_SIZE:100}
+    auto-create-indexes: ${SEARCH_AUTO_CREATE_INDEXES:true}
+    kafka:
+      enabled: ${SEARCH_KAFKA_ENABLED:true}
+      consumer-group-id: ${SEARCH_KAFKA_GROUP_ID:livelattice-search-indexer}
+      topics: ${SEARCH_KAFKA_TOPICS:canvas.created,canvas.updated,canvas.deleted,comment.added,comment.deleted,document.created,document.updated,document.deleted,dashboard.created,dashboard.updated,dashboard.deleted,template.created,template.updated,template.deleted,user.created,user.updated,user.deleted}

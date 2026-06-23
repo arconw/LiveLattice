@@ -112,7 +112,10 @@ function clientKey(request: FastifyRequest): string {
 
 function isProtectedRoute(request: FastifyRequest): boolean {
   const url = request.raw.url ?? "";
-  return matchesRoutePrefix(url, "/api/core") || matchesRoutePrefix(url, "/api/import-export") || matchesRoutePrefix(url, "/auth/keys");
+  return matchesRoutePrefix(url, "/api/core")
+    || matchesRoutePrefix(url, "/api/search")
+    || matchesRoutePrefix(url, "/api/import-export")
+    || matchesRoutePrefix(url, "/auth/keys");
 }
 
 function isApiKeyRequest(request: FastifyRequest): boolean {

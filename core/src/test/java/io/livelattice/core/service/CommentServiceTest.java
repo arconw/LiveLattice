@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 import io.livelattice.core.event.CommentAdded;
+import io.livelattice.core.event.CommentDeleted;
 import io.livelattice.core.event.EventPublisher;
 import io.livelattice.core.exception.ForbiddenException;
 import io.livelattice.core.exception.NotFoundException;
@@ -162,6 +163,7 @@ class CommentServiceTest {
         commentService.delete(canvasId, comment.getId().toString(), userId);
 
         assertNotNull(comment.getDeletedAt());
+        verify(eventPublisher).publish(any(CommentDeleted.class));
     }
 
     @Test
@@ -180,5 +182,6 @@ class CommentServiceTest {
         when(commentRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
         assertDoesNotThrow(() -> commentService.delete(canvasId, comment.getId().toString(), userId));
+        verify(eventPublisher).publish(any(CommentDeleted.class));
     }
 }

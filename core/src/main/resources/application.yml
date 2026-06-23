@@ -18,6 +18,8 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+  kafka:
+    bootstrap-servers: ${KAFKA_BROKERS:localhost:9092}
   flyway:
     enabled: true
     baseline-on-migrate: true
@@ -36,3 +38,6 @@ livelattice:
     access-key: ${LIVELATTICE_SNAPSHOTS_ACCESS_KEY:livelattice}
     secret-key: ${LIVELATTICE_SNAPSHOTS_SECRET_KEY:livelattice_dev_password}
     bucket: ${LIVELATTICE_SNAPSHOTS_BUCKET:livelattice-snapshots}
+  search:
+    events:
+      enabled: ${SEARCH_EVENTS_ENABLED:true}

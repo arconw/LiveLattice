@@ -57,13 +57,24 @@ test("protected import-export route rejects missing bearer token", async () => {
   assert.equal(response.statusCode, 401);
 });
 
+test("protected search route rejects missing bearer token", async () => {
+  const config = loadConfig({ AUTH_REQUIRED: "true", RATE_LIMIT_MAX: "1000" });
+  const app = await createApp({ config });
+  after(async () => app.close());
+  const server = app.getHttpAdapter().getInstance();
+  const response = await server.inject({ method: "GET", url: "/api/search/health" });
+  assert.equal(response.statusCode, 401);
+});
+
 test("protected route matching does not overmatch sibling prefixes", async () => {
   const config = loadConfig({ AUTH_REQUIRED: "true", RATE_LIMIT_MAX: "1000" });
   const app = await createApp({ config });
   after(async () => app.close());
   const server = app.getHttpAdapter().getInstance();
-  const response = await server.inject({ method: "GET", url: "/api/import-exporter/health" });
-  assert.equal(response.statusCode, 404);
+  const importExportResponse = await server.inject({ method: "GET", url: "/api/import-exporter/health" });
+  const searchResponse = await server.inject({ method: "GET", url: "/api/searchable/health" });
+  assert.equal(importExportResponse.statusCode, 404);
+  assert.equal(searchResponse.statusCode, 404);
 });
 
 test("api key requests pass through protected core route without bearer token", async () => {

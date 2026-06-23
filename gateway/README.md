@@ -10,7 +10,7 @@ LiveLattice API Gateway is a NestJS/Fastify service that fronts backend services
 - Exchanges login, refresh, and logout requests with Keycloak.
 - Validates bearer JWTs with Keycloak JWKS and caches JWKS/session data.
 - Provisions users in Core through the internal auth flow after login and refresh.
-- Protects `/api/core/*` by default after auth.
+- Protects `/api/core/*`, `/api/search/*`, and `/api/import-export/*` by default after auth.
 - Strips client-supplied trusted internal headers and injects trusted identity headers after validation.
 - Proxies `X-API-Key` requests to Core so Core can validate workspace service tokens.
 - Proxies `/api/:service/*` to backend services by service name.

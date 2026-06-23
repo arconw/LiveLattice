@@ -1,6 +1,7 @@
 package io.livelattice.core.service;
 
 import io.livelattice.core.event.CommentAdded;
+import io.livelattice.core.event.CommentDeleted;
 import io.livelattice.core.event.EventPublisher;
 import io.livelattice.core.exception.BadRequestException;
 import io.livelattice.core.exception.ForbiddenException;
@@ -173,5 +174,6 @@ public class CommentService {
         comment.setDeletedAt(Instant.now());
         comment.setUpdatedAt(Instant.now());
         commentRepository.save(comment);
+        eventPublisher.publish(new CommentDeleted(comment.getId(), canvas.getId(), canvas.getWorkspaceId(), user.getId()));
     }
 }

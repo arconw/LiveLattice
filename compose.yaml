@@ -179,6 +179,7 @@ services:
       AUTH_LOGOUT_ENDPOINT: http://keycloak:8080/realms/livelattice/protocol/openid-connect/logout
       AUTH_CLIENT_ID: livelattice-web
       CORE_PROVISION_URL: http://core:8080/internal/auth/users/provision
+      SEARCH_URL: http://search:8081
       IMPORT_EXPORT_URL: http://import-export:8083
       INTERNAL_AUTH_SECRET: ${INTERNAL_AUTH_SECRET:-livelattice_internal_dev_secret}
       SESSION_CACHE_ENABLED: "true"
@@ -197,6 +198,8 @@ services:
       keycloak:
         condition: service_healthy
       core:
+        condition: service_healthy
+      search:
         condition: service_healthy
       import-export:
         condition: service_healthy
@@ -249,6 +252,8 @@ services:
       LIVELATTICE_SNAPSHOTS_BUCKET: ${MINIO_SNAPSHOTS_BUCKET:-livelattice-snapshots}
       INTERNAL_AUTH_SECRET: ${INTERNAL_AUTH_SECRET:-livelattice_internal_dev_secret}
       API_KEY_CACHE_TTL_SECONDS: 300
+      KAFKA_BROKERS: kafka:9092
+      SEARCH_EVENTS_ENABLED: "true"
     ports:
       - "${CORE_PORT:-8080}:8080"
     depends_on:
@@ -269,18 +274,40 @@ services:
       - livelattice
 
   search:
-    image: busybox:1.37
-    command: sh -c "mkdir -p /www && printf search-ok > /www/health && httpd -f -p 8081 -h /www"
+    build:
+      context: ./services/search
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      OPENSEARCH_URL: http://opensearch:9200
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KAFKA_BROKERS: kafka:9092
+      SEARCH_KAFKA_GROUP_ID: livelattice-search-indexer
+      INTERNAL_AUTH_SECRET: ${INTERNAL_AUTH_SECRET:-livelattice_internal_dev_secret}
+      SEARCH_REINDEX_ADMIN_ROLE: admin
+      SEARCH_AUTO_CREATE_INDEXES: "true"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-livelattice}
+      POSTGRES_USER: ${POSTGRES_USER:-livelattice}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-livelattice_dev_password}
     ports:
       - "${SEARCH_SERVICE_PORT:-8081}:8081"
     depends_on:
+      postgres:
+        condition: service_healthy
       opensearch:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       kafka:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/health"]
-      <<: *placeholder-health
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/ready"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
     networks:
       - livelattice
 
