@@ -104,6 +104,17 @@ export class ProxyService {
     if (method === "GET" || method === "HEAD") {
       return undefined;
     }
+    const contentType = String(request.headers["content-type"] ?? "").toLowerCase();
+    if (contentType.startsWith("multipart/")) {
+      const rawBody = (request as FastifyRequest & { rawBody?: Buffer | string }).rawBody;
+      if (rawBody) {
+        return Buffer.from(rawBody);
+      }
+      if (Buffer.isBuffer(request.body)) {
+        return request.body;
+      }
+      return undefined;
+    }
     const current = request.body as unknown;
     if (current === undefined || current === null) {
       return undefined;

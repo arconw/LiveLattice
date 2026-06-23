@@ -1,0 +1,17 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://postgres:5432/livelattice
+    username: ${POSTGRES_USER:livelattice}
+    password: ${POSTGRES_PASSWORD:livelattice_dev_password}
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: ${REDIS_PORT:6379}
+  kafka:
+    bootstrap-servers: ${KAFKA_BROKERS:kafka:9092}
+
+livelattice:
+  auth:
+    internal-secret: ${INTERNAL_AUTH_SECRET:livelattice_internal_dev_secret}
+  importexport:
+    storage-endpoint: ${STORAGE_ENDPOINT:http://minio:9000}

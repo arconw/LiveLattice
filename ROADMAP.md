@@ -25,7 +25,7 @@ This roadmap tracks implementation status, next backend stages, and working rule
 | 5 | Core Domain - Canvas & Documents | Done | `docs/prompts/canvas-documents.md` | `docs/techDesign/canvas-documents/canvas-documents-design.md` |
 | 6 | Core Domain - Dashboard & Analytics | Done | `docs/prompts/dashboard-analytics.md` | `docs/techDesign/dashboard-analytics/dashboard-analytics-design.md` |
 | 7 | Realtime Collaboration | Done | `docs/prompts/realtime.md` | `docs/techDesign/realtime/realtime-design.md` |
-| 8 | Import & Export | Pending | `docs/prompts/import-export.md` | `docs/techDesign/import-export/import-export-design.md` |
+| 8 | Import & Export | Done | `docs/prompts/import-export.md` | `docs/techDesign/import-export/import-export-design.md` |
 | 9 | Search | Pending | `docs/prompts/search.md` | `docs/techDesign/search/search-design.md` |
 | 10 | Notifications | Pending | `docs/prompts/notifications.md` | `docs/techDesign/notifications/notifications-design.md` |
 | 11 | Audit Log | Pending | `docs/prompts/audit-log.md` | `docs/techDesign/audit-log/audit-log-design.md` |
@@ -37,27 +37,28 @@ This roadmap tracks implementation status, next backend stages, and working rule
 
 Implemented services:
 
-- `gateway`: real service image built from `gateway/`, including the external JWT auth boundary, Keycloak login/refresh/logout, trusted identity header injection, API key proxying, and protected Core proxy paths.
+- `gateway`: real service image built from `gateway/`, including the external JWT auth boundary, Keycloak login/refresh/logout, trusted identity header injection, API key proxying, protected Core proxy paths, and multipart form-data proxying to the import-export service.
 - `core`: real Java Spring Boot service image built from `core/`, including workspace/RBAC, canvas/document APIs, dashboard/analytics APIs, authenticated user provisioning, and workspace-scoped API key lifecycle and enforcement.
-
 - `realtime`: real Node 24 / TypeScript service image built from `realtime/`, including Socket.IO namespace auth through the Gateway JWT boundary, room membership via Redis, Yjs-based collaboration with snapshots and Kafka persistence, presence awareness, and cross-instance Redis pub/sub.
+- `import-export`: real Java 21 / Spring Boot 4.1.0 service image built from `services/import-export/`, including sync and async canvas import/export (SVG, draw.io, PNG, PDF, JSON), dashboard CSV/XLSX/JSON export, batch jobs tracked in Redis with owner/workspace scoping, Kafka async events, MinIO artifact storage, and explicit Flyway migration wired through a service-specific history table (`import_export_flyway_history`) to coexist with the core schema migrations in the same Postgres database.
 
 Remaining placeholder services in `compose.yaml`:
 
 - `search`
 - `notifications`
-- `import-export`
 - `audit-log`
 - `background-jobs`
 
 ## Recommended Next Work
 
-1. Pick up Stage 8: Import & Export once this branch lands.
+1. Pick up Stage 9: Search once this branch lands.
 2. Keep all database schema changes forward-only through Flyway migrations.
 3. Verify through Docker Compose, including gateway auth paths, protected service proxy paths, and at least one permission or validation failure.
 4. Commit and push only after tests, image build, Compose startup, smoke checks, diff checks, and docs review pass.
 
 Stage 7 Realtime Collaboration is complete and verified.
+
+Stage 8 Import & Export is complete and verified: the import-export image builds with unit tests in the Docker build path, the full Testcontainers suite for Postgres, Redis, Kafka, and MinIO passes, the Compose service starts healthy after Core, `/health` returns `UP`, `/ready` reports healthy storage, queue, and cache dependencies, the Gateway protects `/api/import-export/*` and returns 401 without a bearer token, SVG import/export plus unsupported-content validation are covered by integration tests, import/export operations enforce core workspace RBAC, async job state/download endpoints are scoped by job owner or workspace RBAC, and uploaded SVG/draw.io XML is parsed with DTD and external entity access disabled. Core Flyway migrations and import-export Flyway migrations are isolated using separate history tables.
 
 ## Auth Implementation Decisions
 

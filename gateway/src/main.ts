@@ -26,6 +26,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<NestFas
   const auth = new AuthService(config.auth);
   const proxy = new ProxyService(config.routes);
   const adapter = new FastifyAdapter({ logger: false, bodyLimit: config.bodyLimitBytes });
+  (adapter as FastifyAdapter & { useRawBody?: boolean }).useRawBody = true;
   const app = await NestFactory.create<NestFastifyApplication>(AppModule.register(config, metrics), adapter, { bufferLogs: true });
   const server = adapter.getInstance();
 
@@ -62,6 +63,10 @@ export async function createApp(options: CreateAppOptions = {}): Promise<NestFas
         } satisfies IdentityHeaders);
       }
     }
+  });
+
+  server.addContentTypeParser("multipart/form-data", { parseAs: "buffer" }, (_request, body, done) => {
+    done(null, body);
   });
 
   server.addHook("onResponse", async (request, reply) => {
@@ -107,12 +112,16 @@ function clientKey(request: FastifyRequest): string {
 
 function isProtectedRoute(request: FastifyRequest): boolean {
   const url = request.raw.url ?? "";
-  return url.startsWith("/api/core") || url.startsWith("/auth/keys");
+  return matchesRoutePrefix(url, "/api/core") || matchesRoutePrefix(url, "/api/import-export") || matchesRoutePrefix(url, "/auth/keys");
 }
 
 function isApiKeyRequest(request: FastifyRequest): boolean {
   const current = headerValue(request.headers["x-api-key"]);
-  return current !== undefined && current.length > 0 && (request.raw.url ?? "").startsWith("/api/core");
+  return current !== undefined && current.length > 0 && matchesRoutePrefix(request.raw.url ?? "", "/api/core");
+}
+
+function matchesRoutePrefix(url: string, prefix: string): boolean {
+  return url === prefix || url.startsWith(`${prefix}/`) || url.startsWith(`${prefix}?`);
 }
 
 function identity(request: FastifyRequest): IdentityHeaders | undefined {

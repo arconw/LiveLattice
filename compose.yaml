@@ -179,10 +179,12 @@ services:
       AUTH_LOGOUT_ENDPOINT: http://keycloak:8080/realms/livelattice/protocol/openid-connect/logout
       AUTH_CLIENT_ID: livelattice-web
       CORE_PROVISION_URL: http://core:8080/internal/auth/users/provision
+      IMPORT_EXPORT_URL: http://import-export:8083
       INTERNAL_AUTH_SECRET: ${INTERNAL_AUTH_SECRET:-livelattice_internal_dev_secret}
       SESSION_CACHE_ENABLED: "true"
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      BODY_LIMIT_BYTES: 104857600
     ports:
       - "${GATEWAY_PORT:-3000}:3000"
     depends_on:
@@ -195,6 +197,8 @@ services:
       keycloak:
         condition: service_healthy
       core:
+        condition: service_healthy
+      import-export:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health"]
@@ -299,20 +303,41 @@ services:
       - livelattice
 
   import-export:
-    image: busybox:1.37
-    command: sh -c "mkdir -p /www && printf import-export-ok > /www/health && httpd -f -p 8083 -h /www"
+    build:
+      context: ./services/import-export
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      POSTGRES_USER: ${POSTGRES_USER:-livelattice}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-livelattice_dev_password}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KAFKA_BROKERS: kafka:9092
+      STORAGE_ENDPOINT: http://minio:9000
+      STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-livelattice}
+      STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-livelattice_dev_password}
+      STORAGE_BUCKET: ${MINIO_IMPORT_EXPORT_BUCKET:-livelattice-imports}
+      IMPORT_MAX_FILE_SIZE: 100MB
+      IMPORT_MAX_REQUEST_SIZE: 100MB
+      INTERNAL_AUTH_SECRET: ${INTERNAL_AUTH_SECRET:-livelattice_internal_dev_secret}
     ports:
       - "${IMPORT_EXPORT_PORT:-8083}:8083"
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       minio:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      core:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8083/health"]
-      <<: *placeholder-health
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
     networks:
       - livelattice
 
