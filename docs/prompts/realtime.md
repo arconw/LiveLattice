@@ -51,24 +51,24 @@ Implement the WebSocket-based realtime collaboration service with CRDT conflict 
 ## Verification
 
 ```bash
-# Start infra + core
-docker compose up -d
+docker compose config
+docker compose build realtime
 
-# Start realtime
-cd realtime && npm install && npm run start:dev
+docker compose up -d redis kafka keycloak core realtime
+docker compose ps realtime
 
-# Connect via WebSocket client (use wscat or similar)
-wscat -c "ws://localhost:3002/ws/ws-123?token=<valid_jwt>"
+curl -sf http://127.0.0.1:3002/health
+curl -sf http://127.0.0.1:3002/ready
 
-# Join room
-> {"event":"join:room","data":{"canvasId":"canvas-123"}}
-
-# Send operation
-> {"event":"canvas:op","data":{"ops":[{"type":"add","element":{"id":"el-1","type":"rectangle","x":10,"y":10}}],"version":1,"seq":1}}
-
-# Expect ack
-< {"event":"canvas:ack","data":{"version":2,"seq":1}}
-
-# Run tests
-cd realtime && npm test
+cd realtime && npm ci && npm test && npm run build
 ```
+
+Socket.IO smoke test with `AUTH_DISABLED=true` (local test harness only; Docker Compose default requires auth):
+
+```bash
+docker compose run --rm -e AUTH_DISABLED=true -e KAFKA_ENABLED=false realtime &
+sleep 3
+node -e 'const {io}=require("socket.io-client"); const s=io("http://127.0.0.1:3002/ws/ws-1",{transports:["websocket"]}); s.on("connect",()=>{s.emit("join:room",{canvasId:"canvas-1"},(a)=>{console.log("join",a);s.emit("canvas:op",{canvasId:"canvas-1",ops:[{type:"add",id:"el-1"}],seq:1},(b)=>{console.log("ack",b);s.disconnect();process.exit(0)})})}); s.on("connect_error",e=>{console.error(e.message);process.exit(1)})'
+```
+
+Expected ack shape: `{ ok: true, canvasId: "canvas-1", version: 1, seq: 1 }`.

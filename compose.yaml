@@ -203,8 +203,20 @@ services:
       - livelattice
 
   realtime:
-    image: busybox:1.37
-    command: sh -c "mkdir -p /www && printf realtime-ok > /www/health && httpd -f -p 3002 -h /www"
+    build:
+      context: ./realtime
+    environment:
+      PORT: 3002
+      AUTH_DISABLED: "false"
+      AUTH_ISSUER: http://keycloak:8080/realms/livelattice
+      AUTH_JWKS_URI: http://keycloak:8080/realms/livelattice/protocol/openid-connect/certs
+      CORE_URL: http://core:8080
+      INTERNAL_AUTH_SECRET: ${INTERNAL_AUTH_SECRET:-livelattice_internal_dev_secret}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_CANVAS_OPS_TOPIC: canvas.ops
+      KAFKAJS_NO_PARTITIONER_WARNING: "1"
     ports:
       - "${REALTIME_PORT:-3002}:3002"
     depends_on:
@@ -212,8 +224,12 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      keycloak:
+        condition: service_healthy
+      core:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3002/health"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3002/health"]
       <<: *placeholder-health
     networks:
       - livelattice

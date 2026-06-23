@@ -24,7 +24,7 @@ This roadmap tracks implementation status, next backend stages, and working rule
 | 4 | Core Domain - Workspaces & RBAC | Done | `docs/prompts/workspaces-rbac.md` | `docs/techDesign/workspaces-rbac/workspaces-rbac-design.md` |
 | 5 | Core Domain - Canvas & Documents | Done | `docs/prompts/canvas-documents.md` | `docs/techDesign/canvas-documents/canvas-documents-design.md` |
 | 6 | Core Domain - Dashboard & Analytics | Done | `docs/prompts/dashboard-analytics.md` | `docs/techDesign/dashboard-analytics/dashboard-analytics-design.md` |
-| 7 | Realtime Collaboration | Pending | `docs/prompts/realtime.md` | `docs/techDesign/realtime/realtime-design.md` |
+| 7 | Realtime Collaboration | Done | `docs/prompts/realtime.md` | `docs/techDesign/realtime/realtime-design.md` |
 | 8 | Import & Export | Pending | `docs/prompts/import-export.md` | `docs/techDesign/import-export/import-export-design.md` |
 | 9 | Search | Pending | `docs/prompts/search.md` | `docs/techDesign/search/search-design.md` |
 | 10 | Notifications | Pending | `docs/prompts/notifications.md` | `docs/techDesign/notifications/notifications-design.md` |
@@ -40,9 +40,10 @@ Implemented services:
 - `gateway`: real service image built from `gateway/`, including the external JWT auth boundary, Keycloak login/refresh/logout, trusted identity header injection, API key proxying, and protected Core proxy paths.
 - `core`: real Java Spring Boot service image built from `core/`, including workspace/RBAC, canvas/document APIs, dashboard/analytics APIs, authenticated user provisioning, and workspace-scoped API key lifecycle and enforcement.
 
+- `realtime`: real Node 24 / TypeScript service image built from `realtime/`, including Socket.IO namespace auth through the Gateway JWT boundary, room membership via Redis, Yjs-based collaboration with snapshots and Kafka persistence, presence awareness, and cross-instance Redis pub/sub.
+
 Remaining placeholder services in `compose.yaml`:
 
-- `realtime`
 - `search`
 - `notifications`
 - `import-export`
@@ -51,13 +52,12 @@ Remaining placeholder services in `compose.yaml`:
 
 ## Recommended Next Work
 
-1. Implement Stage 7: Realtime Collaboration on top of the Stage 3 JWT authentication boundary.
-2. Use the Stage 3 JWT boundary for WebSocket connection authentication.
-3. Keep all database schema changes forward-only through Flyway migrations.
-4. Verify through Docker Compose, including gateway auth paths, protected service proxy paths, and at least one permission or validation failure.
-5. Commit and push only after tests, image build, Compose startup, smoke checks, diff checks, and docs review pass.
+1. Pick up Stage 8: Import & Export once this branch lands.
+2. Keep all database schema changes forward-only through Flyway migrations.
+3. Verify through Docker Compose, including gateway auth paths, protected service proxy paths, and at least one permission or validation failure.
+4. Commit and push only after tests, image build, Compose startup, smoke checks, diff checks, and docs review pass.
 
-Stage 3 Auth & Identity is complete and verified. Stage 7 Realtime Collaboration depends on the Stage 3 JWT-based authentication boundary. Stage 6 is complete and verified through direct core and gateway smoke checks.
+Stage 7 Realtime Collaboration is complete and verified.
 
 ## Auth Implementation Decisions
 
