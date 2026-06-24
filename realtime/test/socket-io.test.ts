@@ -33,17 +33,20 @@ test("Socket.IO integration: join, canvas:op ack with version, and broadcast to 
   const opAck = await emitWithAck(clientA, "canvas:op", {
     canvasId,
     ops: [{ type: "add", id: "el-1", element: { kind: "rect" } }],
-    version: 1,
+    version: 129,
+    lockVersion: 5,
     seq: 1
   });
   assert.equal(opAck.ok, true);
   assert.equal(opAck.canvasId, canvasId);
-  assert.equal(opAck.version, 1);
+  assert.equal(opAck.version, 129);
+  assert.equal(opAck.lockVersion, 5);
   assert.equal(opAck.seq, 1);
 
-  const broadcast = (await receivedOp) as { canvasId: string; ops: unknown[]; version: number; seq: number };
+  const broadcast = (await receivedOp) as { canvasId: string; ops: unknown[]; version: number; lockVersion: number; seq: number };
   assert.equal(broadcast.canvasId, canvasId);
-  assert.equal(broadcast.version, 1);
+  assert.equal(broadcast.version, 129);
+  assert.equal(broadcast.lockVersion, 5);
   assert.equal(broadcast.seq, 1);
 
   const opAck2 = await emitWithAck(clientA, "canvas:op", {
@@ -51,9 +54,9 @@ test("Socket.IO integration: join, canvas:op ack with version, and broadcast to 
     ops: [{ type: "add", id: "el-2" }],
     seq: 2
   });
-  assert.equal(opAck2.version, 2);
+  assert.equal(opAck2.version, 130);
 
-  assert.equal(runtime.collaboration.getVersion(canvasId), 2);
+  assert.equal(runtime.collaboration.getVersion(canvasId), 130);
 });
 
 test("Socket.IO integration: leave:room removes membership", async () => {

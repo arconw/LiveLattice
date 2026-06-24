@@ -1,5 +1,9 @@
 package io.livelattice.core.service;
 
+import io.livelattice.core.event.DashboardCreated;
+import io.livelattice.core.event.DashboardDeleted;
+import io.livelattice.core.event.DashboardUpdated;
+import io.livelattice.core.event.EventPublisher;
 import io.livelattice.core.exception.BadRequestException;
 import io.livelattice.core.exception.ForbiddenException;
 import io.livelattice.core.exception.NotFoundException;
@@ -30,17 +34,20 @@ public class DashboardService {
     private final UserRepository userRepository;
     private final PermissionService permissionService;
     private final QuotaService quotaService;
+    private final EventPublisher eventPublisher;
 
     public DashboardService(DashboardRepository dashboardRepository,
                               WidgetRepository widgetRepository,
                               UserRepository userRepository,
                               PermissionService permissionService,
-                              QuotaService quotaService) {
+                              QuotaService quotaService,
+                              EventPublisher eventPublisher) {
         this.dashboardRepository = dashboardRepository;
         this.widgetRepository = widgetRepository;
         this.userRepository = userRepository;
         this.permissionService = permissionService;
         this.quotaService = quotaService;
+        this.eventPublisher = eventPublisher;
     }
 
     private User resolveUser(String externalSubject) {
@@ -89,6 +96,9 @@ public class DashboardService {
             dashboard.setDescription(request.description());
         }
         dashboard = dashboardRepository.save(dashboard);
+
+        eventPublisher.publish(new DashboardCreated(dashboard.getId(), workspaceUuid, internalUserId));
+
         return DashboardResponse.from(dashboard);
     }
 
@@ -139,6 +149,9 @@ public class DashboardService {
         dashboard.setUpdatedBy(internalUserId);
         dashboard.setUpdatedAt(Instant.now());
         dashboard = dashboardRepository.save(dashboard);
+
+        eventPublisher.publish(new DashboardUpdated(dashboard.getId(), dashboard.getWorkspaceId(), internalUserId));
+
         return DashboardResponse.from(dashboard);
     }
 
@@ -154,6 +167,8 @@ public class DashboardService {
         dashboard.setUpdatedBy(internalUserId);
         dashboard.setUpdatedAt(Instant.now());
         dashboardRepository.save(dashboard);
+
+        eventPublisher.publish(new DashboardDeleted(dashboard.getId(), dashboard.getWorkspaceId(), internalUserId));
     }
 
     public DashboardResponse duplicate(String id, String userId) {
@@ -188,6 +203,8 @@ public class DashboardService {
             );
             widgetRepository.save(copyWidget);
         }
+
+        eventPublisher.publish(new DashboardCreated(copy.getId(), copy.getWorkspaceId(), internalUserId));
 
         return DashboardResponse.from(copy);
     }

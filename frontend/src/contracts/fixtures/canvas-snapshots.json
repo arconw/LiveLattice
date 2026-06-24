@@ -1,0 +1,18 @@
+[
+  {
+    "id": "cccccccc-cccc-4ccc-8ccc-cccccccc0128",
+    "canvasId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "version": 128,
+    "minioPath": "snapshots/factory/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/128.yjs.snappy",
+    "createdBy": "keycloak-subject",
+    "snapshotAt": "2026-06-23T18:30:00Z"
+  },
+  {
+    "id": "cccccccc-cccc-4ccc-8ccc-cccccccc0126",
+    "canvasId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "version": 126,
+    "minioPath": "snapshots/factory/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/126.yjs.snappy",
+    "createdBy": "keycloak-subject",
+    "snapshotAt": "2026-06-23T18:00:00Z"
+  }
+]

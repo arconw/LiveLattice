@@ -1,0 +1,54 @@
+[
+  {
+    "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+    "canvasId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "parentId": null,
+    "authorId": "keycloak-subject",
+    "content": "Validate RBAC before export leaves the Gateway boundary.",
+    "resolved": false,
+    "resolvedBy": null,
+    "resolvedAt": null,
+    "targetElementId": "el-arrow",
+    "createdAt": "2026-06-23T16:40:00Z",
+    "updatedAt": "2026-06-23T16:40:00Z"
+  },
+  {
+    "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2",
+    "canvasId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "parentId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+    "authorId": "analytics-user",
+    "content": "Export responses must link to jobs when async.",
+    "resolved": false,
+    "resolvedBy": null,
+    "resolvedAt": null,
+    "targetElementId": "el-arrow",
+    "createdAt": "2026-06-23T16:44:00Z",
+    "updatedAt": "2026-06-23T16:44:00Z"
+  },
+  {
+    "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3",
+    "canvasId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "parentId": null,
+    "authorId": "keycloak-subject",
+    "content": "Snapshot before changing the database branch.",
+    "resolved": false,
+    "resolvedBy": null,
+    "resolvedAt": null,
+    "targetElementId": null,
+    "createdAt": "2026-06-23T17:10:00Z",
+    "updatedAt": "2026-06-23T17:10:00Z"
+  },
+  {
+    "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb4",
+    "canvasId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "parentId": null,
+    "authorId": "keycloak-subject",
+    "content": "This thread points at an element removed in v127.",
+    "resolved": false,
+    "resolvedBy": null,
+    "resolvedAt": null,
+    "targetElementId": "el-deleted",
+    "createdAt": "2026-06-23T17:30:00Z",
+    "updatedAt": "2026-06-23T17:30:00Z"
+  }
+]

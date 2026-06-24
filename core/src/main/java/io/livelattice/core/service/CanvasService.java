@@ -2,6 +2,7 @@ package io.livelattice.core.service;
 
 import io.livelattice.core.event.CanvasCreated;
 import io.livelattice.core.event.CanvasDeleted;
+import io.livelattice.core.event.CanvasRestored;
 import io.livelattice.core.event.CanvasUpdated;
 import io.livelattice.core.event.EventPublisher;
 import io.livelattice.core.exception.BadRequestException;
@@ -288,8 +289,8 @@ public class CanvasService {
         UUID canvasUuid = parseUuid(id, "canvasId");
         Canvas canvas = findActiveCanvas(canvasUuid);
         checkEdit(canvas.getWorkspaceId().toString(), internalUserId.toString());
-        snapshotManager.restoreSnapshot(canvas.getId(), version, internalUserId);
-        return CanvasResponse.from(canvasRepository.findByIdAndDeletedAtIsNull(canvas.getId()).orElseThrow(
-            () -> new NotFoundException("Canvas not found: " + id)));
+        Canvas restored = snapshotManager.restoreSnapshot(canvas.getId(), version, internalUserId);
+        eventPublisher.publish(new CanvasRestored(restored.getId(), restored.getWorkspaceId(), internalUserId, version, restored.getVersion()));
+        return CanvasResponse.from(restored);
     }
 }

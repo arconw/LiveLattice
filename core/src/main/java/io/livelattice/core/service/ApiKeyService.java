@@ -1,6 +1,9 @@
 package io.livelattice.core.service;
 
 import io.livelattice.core.config.AuthProperties;
+import io.livelattice.core.event.ApiKeyCreated;
+import io.livelattice.core.event.ApiKeyRevoked;
+import io.livelattice.core.event.EventPublisher;
 import io.livelattice.core.exception.NotFoundException;
 import io.livelattice.core.exception.UnauthorizedException;
 import io.livelattice.core.model.dto.ApiKeyCreatedResponse;
@@ -42,6 +45,7 @@ public class ApiKeyService {
     private final PermissionService permissionService;
     private final StringRedisTemplate redisTemplate;
     private final AuthProperties authProperties;
+    private final EventPublisher eventPublisher;
     private final BCryptPasswordEncoder passwordEncoder;
     private final SecureRandom secureRandom;
 
@@ -52,8 +56,9 @@ public class ApiKeyService {
                          UserService userService,
                          PermissionService permissionService,
                          StringRedisTemplate redisTemplate,
-                         AuthProperties authProperties) {
-        this(apiKeyRepository, workspaceRepository, userRepository, userService, permissionService, redisTemplate, authProperties, new BCryptPasswordEncoder(12), new SecureRandom());
+                         AuthProperties authProperties,
+                         EventPublisher eventPublisher) {
+        this(apiKeyRepository, workspaceRepository, userRepository, userService, permissionService, redisTemplate, authProperties, eventPublisher, new BCryptPasswordEncoder(12), new SecureRandom());
     }
 
     ApiKeyService(ApiKeyRepository apiKeyRepository,
@@ -63,6 +68,7 @@ public class ApiKeyService {
                   PermissionService permissionService,
                   StringRedisTemplate redisTemplate,
                   AuthProperties authProperties,
+                  EventPublisher eventPublisher,
                   BCryptPasswordEncoder passwordEncoder,
                   SecureRandom secureRandom) {
         this.apiKeyRepository = apiKeyRepository;
@@ -72,6 +78,7 @@ public class ApiKeyService {
         this.permissionService = permissionService;
         this.redisTemplate = redisTemplate;
         this.authProperties = authProperties;
+        this.eventPublisher = eventPublisher;
         this.passwordEncoder = passwordEncoder;
         this.secureRandom = secureRandom;
     }
@@ -87,6 +94,9 @@ public class ApiKeyService {
         String token = tokenFor(apiKey.getId());
         apiKey.setTokenHash(passwordEncoder.encode(token));
         apiKey = apiKeyRepository.save(apiKey);
+
+        eventPublisher.publish(new ApiKeyCreated(apiKey.getId(), workspaceId, creator.getId()));
+
         return ApiKeyCreatedResponse.from(apiKey, token);
     }
 
@@ -111,6 +121,8 @@ public class ApiKeyService {
         apiKey.setRevokedAt(Instant.now());
         apiKeyRepository.save(apiKey);
         evict(keyId);
+
+        eventPublisher.publish(new ApiKeyRevoked(apiKey.getId(), UUID.fromString(workspaceId), requester.getId()));
     }
 
     public ApiKeyValidation validate(String token) {

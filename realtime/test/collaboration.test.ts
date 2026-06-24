@@ -33,6 +33,31 @@ test("collaboration version increments per accepted operation batch", async () =
   assert.equal(engine.getVersion("c1"), 2);
 });
 
+test("collaboration can force Core versions and keep trusted replay monotonic", async () => {
+  const stores = new MemoryStores();
+  after(async () => stores.close());
+  const engine = makeEngine(stores);
+  after(() => engine.close());
+
+  const coreAccepted = await engine.applyOperations(
+    { canvasId: "c-core", ops: [{ type: "add", id: "el-core" }], version: 129, lockVersion: 5, seq: 1 },
+    "origin-core",
+    { trustVersion: true, forceVersion: true }
+  );
+  assert.equal(coreAccepted.ack.version, 129);
+  assert.equal(coreAccepted.ack.lockVersion, 5);
+  assert.equal(coreAccepted.broadcast.version, 129);
+  assert.equal(coreAccepted.broadcast.lockVersion, 5);
+
+  const replayedOlder = await engine.applyOperations(
+    { canvasId: "c-core", ops: [{ type: "add", id: "el-older" }], version: 128 },
+    "origin-replay",
+    { trustVersion: true }
+  );
+  assert.equal(replayedOlder.ack.version, 129);
+  assert.equal(engine.getVersion("c-core"), 129);
+});
+
 test("snapshot triggers after ops threshold", async () => {
   const stores = new MemoryStores();
   after(async () => stores.close());

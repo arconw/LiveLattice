@@ -151,6 +151,7 @@ The frontend may keep richer transient interaction state locally, but persisted 
 ### Realtime Collaboration
 
 - The active canvas editor connects to the documented realtime endpoint through Gateway or the approved realtime entrypoint.
+- The approved realtime entrypoint is configured with `VITE_REALTIME_URL`; the frontend appends `/ws/{workspaceId}` and must not silently fall back to same-origin `/ws` unless deployment provides that reverse proxy path.
 - The client joins rooms by canvas id.
 - Presence and awareness use the documented payloads: cursor coordinates, selection ids, and online/away state.
 - Canvas operations must be idempotent, ordered, and associated with local sequence ids.

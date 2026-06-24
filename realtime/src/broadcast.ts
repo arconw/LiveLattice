@@ -60,6 +60,7 @@ export class BroadcastService {
         canvasId: op.canvasId,
         ops: op.ops,
         version: op.version,
+        lockVersion: op.lockVersion,
         seq: op.seq,
         origin: op.origin
       });

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.livelattice.importexport.exception.UnsupportedFormatException;
 import io.livelattice.importexport.model.JobStatus;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -17,17 +18,20 @@ public class AsyncJobProcessor {
     private final ArtifactService artifactService;
     private final CanvasLookupService canvasLookupService;
     private final JobService jobService;
+    private final AuditEventPublisher auditEventPublisher;
     private final ObjectMapper objectMapper;
 
     public AsyncJobProcessor(FormatTransformer transformer,
                               ArtifactService artifactService,
                               CanvasLookupService canvasLookupService,
                               JobService jobService,
+                              AuditEventPublisher auditEventPublisher,
                               ObjectMapper objectMapper) {
         this.transformer = transformer;
         this.artifactService = artifactService;
         this.canvasLookupService = canvasLookupService;
         this.jobService = jobService;
+        this.auditEventPublisher = auditEventPublisher;
         this.objectMapper = objectMapper;
     }
 
@@ -69,6 +73,7 @@ public class AsyncJobProcessor {
         UUID canvasId = canvasLookupService.save(canvas, workspaceId, userSubject);
         artifactService.storeCanvasJson(workspaceId, canvasId, canvas);
         jobService.updateStatus(jobId, JobStatus.COMPLETED, 100, canvasId.toString(), null);
+        auditEventPublisher.publishCanvasImport(workspaceId, canvasId, userSubject, importMetadata("async", jobId, filename, title, null, null));
     }
 
     private void processExportJob(UUID jobId, Map<String, Object> message) throws Exception {
@@ -82,6 +87,7 @@ public class AsyncJobProcessor {
         jobService.updateStatus(jobId, JobStatus.PROCESSING, 70, null, null);
         String path = artifactService.storeArtifact(workspaceId, jobId, "export." + format, content, contentType(format));
         jobService.updateStatus(jobId, JobStatus.COMPLETED, 100, path, null);
+        auditEventPublisher.publishCanvasExport(workspaceId, canvasId, userSubject, exportMetadata("async", format, jobId, content.length, path, null, null));
     }
 
     private void processBatchImportJob(UUID jobId, Map<String, Object> message) throws Exception {
@@ -101,6 +107,7 @@ public class AsyncJobProcessor {
             UUID canvasId = canvasLookupService.save(canvas, workspaceId, userSubject);
             artifactService.storeCanvasJson(workspaceId, canvasId, canvas);
             canvasIds.add(canvasId.toString());
+            auditEventPublisher.publishCanvasImport(workspaceId, canvasId, userSubject, importMetadata("batch", jobId, filenames.get(i), titles.get(i), i + 1, total));
             int progress = 20 + (int) (((double) (i + 1) / total) * 70);
             jobService.updateStatus(jobId, JobStatus.PROCESSING, progress, null, null);
         }
@@ -121,6 +128,7 @@ public class AsyncJobProcessor {
             byte[] content = exportContent(canvas, format);
             String path = artifactService.storeArtifact(workspaceId, jobId, canvasId + "." + format, content, contentType(format));
             artifactPaths.add(path);
+            auditEventPublisher.publishCanvasExport(workspaceId, canvasId, userSubject, exportMetadata("batch", format, jobId, content.length, path, i + 1, total));
             int progress = 20 + (int) (((double) (i + 1) / total) * 70);
             jobService.updateStatus(jobId, JobStatus.PROCESSING, progress, null, null);
         }
@@ -150,5 +158,38 @@ public class AsyncJobProcessor {
 
     private String stringValue(Object value) {
         return value == null ? "" : String.valueOf(value);
+    }
+
+    private Map<String, Object> importMetadata(String mode, UUID jobId, String filename, String title, Integer batchIndex, Integer batchSize) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("mode", mode);
+        metadata.put("job_id", jobId.toString());
+        if (filename != null && !filename.isBlank()) {
+            metadata.put("filename", filename);
+        }
+        if (title != null && !title.isBlank()) {
+            metadata.put("title", title);
+        }
+        if (batchIndex != null && batchSize != null) {
+            metadata.put("batch_index", batchIndex);
+            metadata.put("batch_size", batchSize);
+        }
+        return metadata;
+    }
+
+    private Map<String, Object> exportMetadata(String mode, String format, UUID jobId, int bytes, String artifactPath, Integer batchIndex, Integer batchSize) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("mode", mode);
+        metadata.put("format", format);
+        metadata.put("job_id", jobId.toString());
+        metadata.put("bytes", bytes);
+        if (artifactPath != null && !artifactPath.isBlank()) {
+            metadata.put("artifact_path", artifactPath);
+        }
+        if (batchIndex != null && batchSize != null) {
+            metadata.put("batch_index", batchIndex);
+            metadata.put("batch_size", batchSize);
+        }
+        return metadata;
     }
 }

@@ -1,6 +1,8 @@
 package io.livelattice.notifications.controller;
 
 import io.livelattice.notifications.config.NotificationsProperties;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -15,10 +17,16 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class HealthController {
 
+    private static final String SERVICE = "notifications";
+    private static final String VERSION = "0.1.0";
+    private static final Duration CACHE_TTL = Duration.ofSeconds(10);
+
     private final JdbcTemplate jdbcTemplate;
     private final StringRedisTemplate redisTemplate;
     private final AdminClient adminClient;
     private final NotificationsProperties properties;
+    private final Instant startedAt = Instant.now();
+    private volatile CachedReadiness cachedReadiness;
 
     public HealthController(JdbcTemplate jdbcTemplate,
                             StringRedisTemplate redisTemplate,
@@ -31,58 +39,130 @@ public class HealthController {
     }
 
     @GetMapping("/health")
-    public ResponseEntity<Map<String, String>> health() {
-        return ResponseEntity.ok(Map.of(
-            "status", "UP",
-            "service", "notifications",
-            "version", "0.1.0"
-        ));
+    public ResponseEntity<Map<String, Object>> health() {
+        return ResponseEntity.ok(base("UP"));
     }
 
     @GetMapping("/ready")
     public ResponseEntity<Map<String, Object>> ready() {
-        Map<String, String> database = checkDatabase();
-        Map<String, String> cache = checkCache();
-        Map<String, String> queue = checkQueue();
-        boolean healthy = "healthy".equals(database.get("status"))
-            && "healthy".equals(cache.get("status"))
-            && ("healthy".equals(queue.get("status")) || "disabled".equals(queue.get("status")));
-        Map<String, Object> readiness = new LinkedHashMap<>();
-        readiness.put("status", healthy ? "UP" : "DEGRADED");
-        readiness.put("database", database);
-        readiness.put("cache", cache);
-        readiness.put("queue", queue);
-        HttpStatus status = healthy ? HttpStatus.OK : HttpStatus.SERVICE_UNAVAILABLE;
-        return ResponseEntity.status(status).body(readiness);
+        CachedReadiness readiness = cached();
+        return ResponseEntity.status(readiness.healthy() ? HttpStatus.OK : HttpStatus.SERVICE_UNAVAILABLE).body(readiness.body());
     }
 
-    private Map<String, String> checkDatabase() {
+    private CachedReadiness cached() {
+        Instant now = Instant.now();
+        CachedReadiness current = cachedReadiness;
+        if (current != null && now.isBefore(current.expiresAt())) {
+            return current;
+        }
+        CachedReadiness next = evaluate(now);
+        cachedReadiness = next;
+        return next;
+    }
+
+    private CachedReadiness evaluate(Instant now) {
+        Map<String, Object> database = checkDatabase();
+        Map<String, Object> cache = checkCache();
+        Map<String, Object> queue = checkQueue();
+        boolean healthy = healthy(database) && healthy(cache) && (healthy(queue) || disabled(queue));
+        Map<String, Object> checks = new LinkedHashMap<>();
+        checks.put("database", database);
+        checks.put("cache", cache);
+        checks.put("queue", queue);
+        Map<String, Object> readiness = base(healthy ? "UP" : "DEGRADED");
+        readiness.put("checks", checks);
+        readiness.putAll(checks);
+        return new CachedReadiness(readiness, healthy, now.plus(CACHE_TTL));
+    }
+
+    private Map<String, Object> base(String status) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("status", status);
+        body.put("service", SERVICE);
+        body.put("version", VERSION);
+        body.put("uptimeSeconds", Duration.between(startedAt, Instant.now()).toSeconds());
+        return body;
+    }
+
+    private Map<String, Object> checkDatabase() {
+        long started = System.nanoTime();
         try {
             Integer result = jdbcTemplate.queryForObject("SELECT 1", Integer.class);
-            return Map.of("status", result != null && result == 1 ? "healthy" : "unhealthy");
+            return result != null && result == 1 ? healthyCheck(started) : unhealthyCheck("unexpected_result", started);
         } catch (Exception ex) {
-            return Map.of("status", "unhealthy", "error", ex.getMessage());
+            return unhealthyCheck(ex, started);
         }
     }
 
-    private Map<String, String> checkCache() {
+    private Map<String, Object> checkCache() {
+        long started = System.nanoTime();
         try {
             String ping = redisTemplate.getConnectionFactory().getConnection().ping();
-            return Map.of("status", "healthy", "ping", ping == null ? "PONG" : ping);
+            Map<String, Object> check = healthyCheck(started);
+            check.put("ping", ping == null ? "PONG" : ping);
+            return check;
         } catch (Exception ex) {
-            return Map.of("status", "unhealthy", "error", ex.getMessage());
+            return unhealthyCheck(ex, started);
         }
     }
 
-    private Map<String, String> checkQueue() {
+    private Map<String, Object> checkQueue() {
         if (!properties.getKafka().isEnabled()) {
-            return Map.of("status", "disabled");
+            return disabledCheck();
         }
+        long started = System.nanoTime();
         try {
-            adminClient.describeCluster().nodes().get(3, TimeUnit.SECONDS);
-            return Map.of("status", "healthy");
+            int nodes = adminClient.describeCluster().nodes().get(3, TimeUnit.SECONDS).size();
+            Map<String, Object> check = healthyCheck(started);
+            check.put("nodes", nodes);
+            return check;
         } catch (Exception ex) {
-            return Map.of("status", "unhealthy", "error", ex.getMessage());
+            return unhealthyCheck(ex, started);
         }
+    }
+
+    private Map<String, Object> healthyCheck(long started) {
+        Map<String, Object> check = new LinkedHashMap<>();
+        check.put("status", "healthy");
+        check.put("latencyMs", elapsedMillis(started));
+        return check;
+    }
+
+    private Map<String, Object> disabledCheck() {
+        Map<String, Object> check = new LinkedHashMap<>();
+        check.put("status", "disabled");
+        return check;
+    }
+
+    private Map<String, Object> unhealthyCheck(Exception ex, long started) {
+        return unhealthyCheck(errorMessage(ex), started);
+    }
+
+    private Map<String, Object> unhealthyCheck(String error, long started) {
+        Map<String, Object> check = new LinkedHashMap<>();
+        check.put("status", "unhealthy");
+        check.put("error", error);
+        check.put("latencyMs", elapsedMillis(started));
+        return check;
+    }
+
+    private long elapsedMillis(long started) {
+        return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+    }
+
+    private boolean healthy(Map<String, Object> check) {
+        return "healthy".equals(check.get("status"));
+    }
+
+    private boolean disabled(Map<String, Object> check) {
+        return "disabled".equals(check.get("status"));
+    }
+
+    private String errorMessage(Exception ex) {
+        String message = ex.getMessage();
+        return message == null || message.isBlank() ? ex.getClass().getSimpleName() : message;
+    }
+
+    private record CachedReadiness(Map<String, Object> body, boolean healthy, Instant expiresAt) {
     }
 }

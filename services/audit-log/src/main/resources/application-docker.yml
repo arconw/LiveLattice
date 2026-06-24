@@ -1,0 +1,31 @@
+spring:
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: ${REDIS_PORT:6379}
+  kafka:
+    bootstrap-servers: ${KAFKA_BROKERS:kafka:9092}
+    consumer:
+      group-id: ${AUDIT_LOG_KAFKA_GROUP_ID:livelattice-audit-log}
+      auto-offset-reset: earliest
+
+server:
+  port: 8084
+
+livelattice:
+  auth:
+    internal-secret: ${INTERNAL_AUTH_SECRET:livelattice_internal_dev_secret}
+    storage-access-key: ${STORAGE_ACCESS_KEY:livelattice}
+    storage-secret-key: ${STORAGE_SECRET_KEY:livelattice_dev_password}
+  audit:
+    kafka-enabled: ${AUDIT_LOG_KAFKA_ENABLED:true}
+    kafka-group-id: ${AUDIT_LOG_KAFKA_GROUP_ID:livelattice-audit-log}
+    kafka-topics: ${AUDIT_LOG_KAFKA_TOPICS:livelattice.audit.events}
+    export-bucket: ${AUDIT_LOG_EXPORT_BUCKET:audit-exports}
+    export-prefix: ${AUDIT_LOG_EXPORT_PREFIX:audit-exports}
+    archive-bucket: ${AUDIT_LOG_ARCHIVE_BUCKET:audit-archive}
+    archive-prefix: ${AUDIT_LOG_ARCHIVE_PREFIX:audit-archive}
+    storage-endpoint: ${STORAGE_ENDPOINT:http://minio:9000}
+    export-processing-interval-ms: ${AUDIT_LOG_EXPORT_PROCESSING_INTERVAL_MS:5000}
+    retention-cron: ${AUDIT_LOG_RETENTION_CRON:0 0 3 * * *}
+    retention-hot-days: ${AUDIT_LOG_RETENTION_HOT_DAYS:90}

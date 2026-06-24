@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+import io.livelattice.core.event.EventPublisher;
 import io.livelattice.core.exception.ConflictException;
 import io.livelattice.core.exception.NotFoundException;
 import io.livelattice.core.exception.QuotaExceededException;
@@ -43,6 +44,8 @@ class WorkspaceServiceTest {
     private PermissionService permissionService;
     @Mock
     private QuotaService quotaService;
+    @Mock
+    private EventPublisher eventPublisher;
 
     private WorkspaceService workspaceService;
     private final String userId = UUID.randomUUID().toString();
@@ -52,7 +55,7 @@ class WorkspaceServiceTest {
     void setUp() {
         workspaceService = new WorkspaceService(
             workspaceRepository, memberRepository, userRepository,
-            permissionService, quotaService
+            permissionService, quotaService, eventPublisher
         );
     }
 

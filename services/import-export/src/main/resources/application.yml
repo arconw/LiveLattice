@@ -39,9 +39,27 @@ spring:
 server:
   port: 8083
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  metrics:
+    tags:
+      service: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+      percentiles:
+        http.server.requests: 0.5,0.95,0.99
+
 livelattice:
   auth:
     internal-secret: ${INTERNAL_AUTH_SECRET:livelattice_internal_dev_secret}
+  audit:
+    events:
+      enabled: ${AUDIT_EVENTS_ENABLED:true}
+      topic: ${KAFKA_AUDIT_TOPIC:livelattice.audit.events}
   importexport:
     max-file-size-bytes: ${IMPORT_MAX_FILE_SIZE_BYTES:104857600}
     sync-threshold-bytes: ${IMPORT_SYNC_THRESHOLD_BYTES:10485760}

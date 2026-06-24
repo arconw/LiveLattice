@@ -1,0 +1,20 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://postgres:5432/livelattice
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: ${REDIS_PORT:6379}
+  kafka:
+    bootstrap-servers: ${KAFKA_BROKERS:kafka:9092}
+
+server:
+  port: 8085
+
+livelattice:
+  auth:
+    internal-secret: ${INTERNAL_AUTH_SECRET:livelattice_internal_dev_secret}
+  jobs:
+    import-export:
+      service-url: ${IMPORT_EXPORT_URL:http://import-export:8083}
+      internal-secret: ${INTERNAL_AUTH_SECRET:livelattice_internal_dev_secret}

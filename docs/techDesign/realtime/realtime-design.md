@@ -59,10 +59,10 @@ Namespace: /ws/{workspaceId}  (matched by /^\/ws\/.+$/)
 
 ## Operation Lifecycle
 
-1. Client emits `canvas:op` with `{ canvasId, ops, version?, seq? }`.
+1. Client emits `canvas:op` with `{ canvasId, ops, version?, lockVersion?, seq? }`. The frontend sends `version` and `lockVersion` only after Core accepts the canvas PATCH.
 2. Server requires the socket to have joined `canvas:{canvasId}` first.
-3. `CollaborationEngine.applyOperations` applies each op to the in-memory `Y.Doc` (`add`, `update`, `remove`, `update-state`) and increments the server-side canvas version by 1 for client-originated operations.
-4. Ack `canvas:ack` returns `{ ok, canvasId, version, seq }`.
+3. `CollaborationEngine.applyOperations` applies each op to the in-memory `Y.Doc` (`add`, `update`, `remove`, `update-state`) and advances to the accepted Core version when `lockVersion` is present; otherwise it increments the server-side canvas version by 1.
+4. Ack `canvas:ack` returns `{ ok, canvasId, version, lockVersion, seq }`.
 5. The accepted operation is broadcast to other members in the same Socket.IO room via `socket.to(roomName).emit("canvas:op", ...)`.
 6. The operation is published to Redis pub/sub channel `realtime:ops` with an `instanceId` envelope for cross-instance fan-out; originating instances ignore their own messages.
 7. Cross-instance received operations are applied in `trustVersion` mode: if the broadcast carries a higher version than the local document, the local version is advanced to the broadcast version so all instances converge to a single monotonic sequence without double-incrementing.
@@ -97,7 +97,7 @@ Namespace: /ws/{workspaceId}  (matched by /^\/ws\/.+$/)
 - Redis pub/sub channel `realtime:ops` carries `{ instanceId, op }` envelopes.
 - An instance ignores messages it published itself (loopback suppression by `instanceId`).
 - Received operations are applied to the local Yjs document (if loaded on that instance) and broadcast to the local Socket.IO room.
-- The cross-instance handler passes `trustVersion: true` to `applyOperations`; local client handlers do not, so clients cannot force arbitrary version jumps.
+- The cross-instance handler passes `trustVersion: true` to `applyOperations`; local client handlers trust the supplied version only when a Core `lockVersion` is present.
 
 ## Performance Considerations
 

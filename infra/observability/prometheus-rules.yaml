@@ -1,0 +1,31 @@
+groups:
+  - name: livelattice-service.rules
+    rules:
+      - alert: HighErrorRate
+        expr: sum(rate(http_requests_total{status=~"5.."}[5m])) by (service) / clamp_min(sum(rate(http_requests_total[5m])) by (service), 1) > 0.01
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High 5xx error rate for {{ $labels.service }}
+      - alert: HighLatency
+        expr: (histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket[5m])) by (le, service)) > 0.5) or (sum(rate(http_request_duration_ms_sum[5m])) by (service) / clamp_min(sum(rate(http_request_duration_ms_count[5m])) by (service), 1) > 500)
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High p95 or average latency for {{ $labels.service }}
+      - alert: KafkaConsumerLag
+        expr: kafka_consumer_lag > 1000 or kafka_consumer_records_lag_max > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Kafka consumer lag is high
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Prometheus target {{ $labels.job }}/{{ $labels.instance }} is down

@@ -5,6 +5,16 @@ x-placeholder-health: &placeholder-health
   timeout: 5s
   retries: 10
 
+x-otel-env: &otel-env
+  OTEL_SDK_DISABLED: ${OTEL_SDK_DISABLED:-false}
+  OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4317}
+  OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+  OTEL_TRACES_EXPORTER: otlp
+  OTEL_METRICS_EXPORTER: none
+  OTEL_LOGS_EXPORTER: none
+  OTEL_TRACES_SAMPLER: parentbased_traceidratio
+  OTEL_TRACES_SAMPLER_ARG: "0.1"
+
 services:
   postgres:
     image: postgres:18.1-alpine
@@ -171,6 +181,9 @@ services:
     build:
       context: ./gateway
     environment:
+      <<: *otel-env
+      OTEL_SERVICE_NAME: gateway
+      OTEL_RESOURCE_ATTRIBUTES: service.name=gateway,deployment.environment=local
       PORT: 3000
       AUTH_REQUIRED: "true"
       AUTH_ISSUER: http://keycloak:8080/realms/livelattice
@@ -182,6 +195,9 @@ services:
       SEARCH_URL: http://search:8081
       NOTIFICATIONS_URL: http://notifications:8082
       IMPORT_EXPORT_URL: http://import-export:8083
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_AUDIT_TOPIC: livelattice.audit.events
+      KAFKAJS_NO_PARTITIONER_WARNING: "1"
       INTERNAL_AUTH_SECRET: ${INTERNAL_AUTH_SECRET:-livelattice_internal_dev_secret}
       SESSION_CACHE_ENABLED: "true"
       REDIS_HOST: redis
@@ -206,8 +222,28 @@ services:
         condition: service_healthy
       import-export:
         condition: service_healthy
+      audit-log:
+        condition: service_healthy
+      background-jobs:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/ready"]
+      <<: *placeholder-health
+    networks:
+      - livelattice
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_REALTIME_URL: ${FRONTEND_REALTIME_URL:-http://localhost:3002}
+    ports:
+      - "${FRONTEND_PORT:-8088}:80"
+    depends_on:
+      gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/health"]
       <<: *placeholder-health
     networks:
       - livelattice
@@ -216,6 +252,9 @@ services:
     build:
       context: ./realtime
     environment:
+      <<: *otel-env
+      OTEL_SERVICE_NAME: realtime
+      OTEL_RESOURCE_ATTRIBUTES: service.name=realtime,deployment.environment=local
       PORT: 3002
       AUTH_DISABLED: "false"
       AUTH_ISSUER: http://keycloak:8080/realms/livelattice
@@ -239,7 +278,7 @@ services:
       core:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3002/health"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3002/ready"]
       <<: *placeholder-health
     networks:
       - livelattice
@@ -248,6 +287,9 @@ services:
     build:
       context: ./core
     environment:
+      <<: *otel-env
+      OTEL_SERVICE_NAME: core
+      OTEL_RESOURCE_ATTRIBUTES: service.name=core,deployment.environment=local
       SPRING_PROFILES_ACTIVE: docker
       LIVELATTICE_SNAPSHOTS_ENDPOINT: http://minio:9000
       LIVELATTICE_SNAPSHOTS_ACCESS_KEY: ${MINIO_ROOT_USER:-livelattice}
@@ -257,6 +299,7 @@ services:
       API_KEY_CACHE_TTL_SECONDS: 300
       KAFKA_BROKERS: kafka:9092
       SEARCH_EVENTS_ENABLED: "true"
+      AUDIT_EVENTS_ENABLED: "true"
     ports:
       - "${CORE_PORT:-8080}:8080"
     depends_on:
@@ -271,7 +314,7 @@ services:
       minio:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/ready"]
       <<: *placeholder-health
     networks:
       - livelattice
@@ -280,6 +323,9 @@ services:
     build:
       context: ./services/search
     environment:
+      <<: *otel-env
+      OTEL_SERVICE_NAME: search
+      OTEL_RESOURCE_ATTRIBUTES: service.name=search,deployment.environment=local
       SPRING_PROFILES_ACTIVE: docker
       OPENSEARCH_URL: http://opensearch:9200
       REDIS_HOST: redis
@@ -337,6 +383,9 @@ services:
     build:
       context: ./services/notifications
     environment:
+      <<: *otel-env
+      OTEL_SERVICE_NAME: notifications
+      OTEL_RESOURCE_ATTRIBUTES: service.name=notifications,deployment.environment=local
       SPRING_PROFILES_ACTIVE: docker
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
@@ -378,12 +427,17 @@ services:
     build:
       context: ./services/import-export
     environment:
+      <<: *otel-env
+      OTEL_SERVICE_NAME: import-export
+      OTEL_RESOURCE_ATTRIBUTES: service.name=import-export,deployment.environment=local
       SPRING_PROFILES_ACTIVE: docker
       POSTGRES_USER: ${POSTGRES_USER:-livelattice}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-livelattice_dev_password}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       KAFKA_BROKERS: kafka:9092
+      KAFKA_AUDIT_TOPIC: livelattice.audit.events
+      AUDIT_EVENTS_ENABLED: "true"
       STORAGE_ENDPOINT: http://minio:9000
       STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-livelattice}
       STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-livelattice_dev_password}
@@ -405,7 +459,7 @@ services:
       core:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8083/health"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8083/ready"]
       interval: 15s
       timeout: 10s
       retries: 20
@@ -414,24 +468,73 @@ services:
       - livelattice
 
   audit-log:
-    image: busybox:1.37
-    command: sh -c "mkdir -p /www && printf audit-log-ok > /www/health && httpd -f -p 8084 -h /www"
+    build:
+      context: ./services/audit-log
+    environment:
+      <<: *otel-env
+      OTEL_SERVICE_NAME: audit-log
+      OTEL_RESOURCE_ATTRIBUTES: service.name=audit-log,deployment.environment=local
+      SPRING_PROFILES_ACTIVE: docker
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-livelattice}
+      POSTGRES_USER: ${POSTGRES_USER:-livelattice}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-livelattice_dev_password}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KAFKA_BROKERS: kafka:9092
+      INTERNAL_AUTH_SECRET: ${INTERNAL_AUTH_SECRET:-livelattice_internal_dev_secret}
+      AUDIT_LOG_KAFKA_GROUP_ID: ${AUDIT_LOG_KAFKA_GROUP_ID:-livelattice-audit-log}
+      AUDIT_LOG_KAFKA_TOPICS: ${AUDIT_LOG_KAFKA_TOPICS:-livelattice.audit.events}
+      AUDIT_LOG_EXPORT_BUCKET: ${AUDIT_LOG_EXPORT_BUCKET:-audit-exports}
+      AUDIT_LOG_ARCHIVE_BUCKET: ${AUDIT_LOG_ARCHIVE_BUCKET:-audit-archive}
+      AUDIT_LOG_ARCHIVE_PREFIX: ${AUDIT_LOG_ARCHIVE_PREFIX:-audit-archive}
+      STORAGE_ENDPOINT: http://minio:9000
+      STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-livelattice}
+      STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-livelattice_dev_password}
     ports:
       - "${AUDIT_LOG_PORT:-8084}:8084"
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       kafka:
         condition: service_healthy
+      minio:
+        condition: service_healthy
+      core:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8084/health"]
-      <<: *placeholder-health
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8084/ready"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
     networks:
       - livelattice
 
   background-jobs:
-    image: busybox:1.37
-    command: sh -c "mkdir -p /www && printf background-jobs-ok > /www/health && httpd -f -p 8085 -h /www"
+    build:
+      context: ./services/background-jobs
+    environment:
+      <<: *otel-env
+      OTEL_SERVICE_NAME: background-jobs
+      OTEL_RESOURCE_ATTRIBUTES: service.name=background-jobs,deployment.environment=local
+      SPRING_PROFILES_ACTIVE: docker
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-livelattice}
+      POSTGRES_USER: ${POSTGRES_USER:-livelattice}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-livelattice_dev_password}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KAFKA_BROKERS: kafka:9092
+      INTERNAL_AUTH_SECRET: ${INTERNAL_AUTH_SECRET:-livelattice_internal_dev_secret}
+      JOBS_WORKER_ENABLED: "true"
+      IMPORT_EXPORT_URL: http://import-export:8083
+      IMPORT_EXPORT_JOB_TOPIC: ${JOB_TOPIC:-import-export-jobs}
+      HOSTNAME: background-jobs
     ports:
       - "${BACKGROUND_JOBS_PORT:-8085}:8085"
     depends_on:
@@ -441,9 +544,14 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      import-export:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8085/health"]
-      <<: *placeholder-health
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8085/ready"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
     networks:
       - livelattice
 

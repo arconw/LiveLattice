@@ -1,0 +1,14 @@
+{
+  "accessToken": "fixture-access-token",
+  "refreshToken": "fixture-refresh-token",
+  "expiresIn": 900,
+  "refreshExpiresIn": 604800,
+  "tokenType": "Bearer",
+  "scope": "openid profile email",
+  "user": {
+    "subject": "keycloak-subject",
+    "email": "owner@example.com",
+    "displayName": "LiveLattice Owner",
+    "roles": ["owner"]
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "title": "LiveLattice Database",
+  "schemaVersion": 42,
+  "version": 1,
+  "refresh": "10s",
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "JDBC connections",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        { "expr": "sum(hikaricp_connections_active) by (service)", "legendFormat": "{{service}} active" },
+        { "expr": "sum(hikaricp_connections_max) by (service)", "legendFormat": "{{service}} max" }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Query and cache metrics",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        { "expr": "sum(rate(db_query_duration_ms_sum[5m])) by (service)", "legendFormat": "{{service}} db duration" },
+        { "expr": "sum(rate(cache_hit_total[5m])) by (service)", "legendFormat": "{{service}} cache hits" },
+        { "expr": "sum(rate(cache_miss_total[5m])) by (service)", "legendFormat": "{{service}} cache misses" }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 }
+    }
+  ]
+}

@@ -22,3 +22,10 @@ livelattice:
   search:
     events:
       enabled: ${SEARCH_EVENTS_ENABLED:true}
+  audit:
+    events:
+      enabled: ${AUDIT_EVENTS_ENABLED:true}
+  analytics:
+    clickhouse-url: jdbc:clickhouse://${CLICKHOUSE_HOST:clickhouse}:${CLICKHOUSE_HTTP_PORT:8123}/${CLICKHOUSE_DB:livelattice}
+    clickhouse-user: ${CLICKHOUSE_USER:livelattice}
+    clickhouse-password: ${CLICKHOUSE_PASSWORD:livelattice_dev_password}

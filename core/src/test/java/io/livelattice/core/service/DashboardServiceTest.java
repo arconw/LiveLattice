@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+import io.livelattice.core.event.DashboardCreated;
+import io.livelattice.core.event.EventPublisher;
 import io.livelattice.core.model.dto.CreateDashboardRequest;
 import io.livelattice.core.model.dto.DashboardResponse;
 import io.livelattice.core.model.dto.UpdateDashboardRequest;
@@ -37,6 +39,8 @@ class DashboardServiceTest {
     private PermissionService permissionService;
     @Mock
     private QuotaService quotaService;
+    @Mock
+    private EventPublisher eventPublisher;
 
     private DashboardService dashboardService;
     private final String userId = UUID.randomUUID().toString();
@@ -46,7 +50,7 @@ class DashboardServiceTest {
     void setUp() {
         dashboardService = new DashboardService(
             dashboardRepository, widgetRepository, userRepository,
-            permissionService, quotaService
+            permissionService, quotaService, eventPublisher
         );
     }
 
@@ -130,5 +134,10 @@ class DashboardServiceTest {
 
         assertEquals("Source (Copy)", response.title());
         assertEquals(30, response.autoRefresh());
+        verify(eventPublisher).publish(argThat((DashboardCreated event) ->
+            event.dashboardId().toString().equals(response.id())
+                && event.workspaceId().equals(UUID.fromString(wsId))
+                && event.userId().equals(user.getId())
+        ));
     }
 }

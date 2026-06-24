@@ -1,5 +1,9 @@
 package io.livelattice.core.service;
 
+import io.livelattice.core.event.DataSourceCreated;
+import io.livelattice.core.event.DataSourceDeleted;
+import io.livelattice.core.event.DataSourceUpdated;
+import io.livelattice.core.event.EventPublisher;
 import io.livelattice.core.exception.BadRequestException;
 import io.livelattice.core.exception.ForbiddenException;
 import io.livelattice.core.exception.NotFoundException;
@@ -29,17 +33,20 @@ public class DataSourceService {
     private final PermissionService permissionService;
     private final ConfigEncryptionService encryptionService;
     private final ClickHouseDataSourceFactory clickHouseDataSourceFactory;
+    private final EventPublisher eventPublisher;
 
     public DataSourceService(DataSourceRepository dataSourceRepository,
                              UserRepository userRepository,
                              PermissionService permissionService,
                              ConfigEncryptionService encryptionService,
-                             ClickHouseDataSourceFactory clickHouseDataSourceFactory) {
+                             ClickHouseDataSourceFactory clickHouseDataSourceFactory,
+                             EventPublisher eventPublisher) {
         this.dataSourceRepository = dataSourceRepository;
         this.userRepository = userRepository;
         this.permissionService = permissionService;
         this.encryptionService = encryptionService;
         this.clickHouseDataSourceFactory = clickHouseDataSourceFactory;
+        this.eventPublisher = eventPublisher;
     }
 
     private User resolveUser(String externalSubject) {
@@ -93,6 +100,9 @@ public class DataSourceService {
             internalUserId
         );
         dataSource = dataSourceRepository.save(dataSource);
+
+        eventPublisher.publish(new DataSourceCreated(dataSource.getId(), workspaceUuid, internalUserId));
+
         return DataSourceResponse.from(dataSource);
     }
 
@@ -130,6 +140,9 @@ public class DataSourceService {
         dataSource.setUpdatedBy(internalUserId);
         dataSource.setUpdatedAt(Instant.now());
         dataSource = dataSourceRepository.save(dataSource);
+
+        eventPublisher.publish(new DataSourceUpdated(dataSource.getId(), dataSource.getWorkspaceId(), internalUserId));
+
         return DataSourceResponse.from(dataSource);
     }
 
@@ -141,6 +154,8 @@ public class DataSourceService {
         dataSource.setUpdatedBy(internalUserId);
         dataSource.setUpdatedAt(Instant.now());
         dataSourceRepository.save(dataSource);
+
+        eventPublisher.publish(new DataSourceDeleted(dataSource.getId(), dataSource.getWorkspaceId(), internalUserId));
     }
 
     public boolean testConnection(String id, String userId) {

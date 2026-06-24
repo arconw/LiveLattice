@@ -1,0 +1,12 @@
+package io.livelattice.auditlog.dto;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import java.time.Instant;
+
+public record ExportRequest(
+    @NotBlank String workspaceId,
+    @NotNull Instant from,
+    @NotNull Instant to,
+    @NotBlank String format
+) {}

@@ -10,6 +10,7 @@ import { BroadcastService } from "./broadcast";
 import { OpPersistenceService } from "./op-persistence";
 import { BackpressureTracker } from "./backpressure";
 import type { KafkaProducerAdapter } from "./kafka-adapter";
+import type { RealtimeMetrics } from "./metrics";
 
 export interface RealtimeServerDeps {
   auth: AuthService;
@@ -25,6 +26,7 @@ export interface RealtimeServerDeps {
   awareness: AwarenessStore;
   stores: RealtimeStores;
   producer?: KafkaProducerAdapter;
+  metrics?: RealtimeMetrics;
 }
 
 export interface CreateServerOptions {
@@ -87,6 +89,7 @@ export function createRealtimeServer(options: CreateServerOptions): RealtimeServ
   });
 
   namespace.on("connection", (socket: Socket) => {
+    deps.metrics?.socketConnected();
     void handleConnection(socket, config, deps);
   });
 
@@ -134,18 +137,22 @@ async function handleConnection(socket: Socket, _config: RealtimeConfig, deps: R
   const origin = `socket:${socket.id}`;
 
   socket.on("join:room", (payload: { canvasId?: string } | undefined, ack?: (res: unknown) => void) => {
+    deps.metrics?.websocketMessage();
     void handleJoinRoom(socket, state, deps, payload, ack);
   });
 
   socket.on("leave:room", (payload: { canvasId?: string } | undefined, ack?: (res: unknown) => void) => {
+    deps.metrics?.websocketMessage();
     void handleLeaveRoom(socket, state, deps, payload, ack);
   });
 
   socket.on("canvas:op", (payload: CanvasOpPayload | undefined, ack?: (res: unknown) => void) => {
+    deps.metrics?.websocketMessage();
     void handleCanvasOp(socket, state, deps, payload, origin, ack);
   });
 
   socket.on("presence:update", (payload: PresencePayload | undefined, ack?: (res: unknown) => void) => {
+    deps.metrics?.websocketMessage();
     void handlePresenceUpdate(socket, state, deps, payload, ack);
   });
 
@@ -221,13 +228,16 @@ async function handleCanvasOp(
   if (backpressure.exceeded) {
     socket.emit("backpressure", { limit: backpressure.limit });
   }
-  const { ack: ackPayload, broadcast } = await deps.collaboration.applyOperations(payload, origin, { trustVersion: false });
+  const hasCoreVersion = typeof payload.version === "number" && typeof payload.lockVersion === "number";
+  const { ack: ackPayload, broadcast } = await deps.collaboration.applyOperations(payload, origin, { trustVersion: hasCoreVersion, forceVersion: hasCoreVersion });
+  deps.metrics?.canvasOperation();
   ack?.({ ok: true, ...ackPayload });
   const roomName = deps.rooms.roomName(canvasId);
   socket.to(roomName).emit("canvas:op", {
     canvasId: broadcast.canvasId,
     ops: broadcast.ops,
     version: broadcast.version,
+    lockVersion: broadcast.lockVersion,
     seq: broadcast.seq,
     origin: broadcast.origin
   });
@@ -280,6 +290,7 @@ async function handlePresenceUpdate(
 }
 
 async function handleDisconnect(state: SocketState, deps: RealtimeServerDeps): Promise<void> {
+  deps.metrics?.socketDisconnected();
   for (const canvasId of state.joinedCanvases) {
     await deps.rooms.leave(canvasId, state.socketId);
     await deps.presence.remove(canvasId, state.identity.subject);
@@ -292,7 +303,7 @@ async function handleCrossInstanceOp(op: BroadcastOp, namespace: Namespace, deps
     return;
   }
   await deps.collaboration.applyOperations(
-    { canvasId: op.canvasId, ops: op.ops, seq: op.seq, version: op.version },
+    { canvasId: op.canvasId, ops: op.ops, seq: op.seq, version: op.version, lockVersion: op.lockVersion },
     op.origin,
     { trustVersion: true }
   );
@@ -301,6 +312,7 @@ async function handleCrossInstanceOp(op: BroadcastOp, namespace: Namespace, deps
     canvasId: op.canvasId,
     ops: op.ops,
     version: op.version,
+    lockVersion: op.lockVersion,
     seq: op.seq,
     origin: op.origin
   });

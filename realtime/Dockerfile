@@ -7,5 +7,7 @@ COPY src ./src
 COPY test ./test
 RUN npm test
 RUN npm run build
+ENV NODE_OPTIONS="--require @opentelemetry/auto-instrumentations-node/register" \
+    OTEL_SDK_DISABLED=true
 EXPOSE 3002
 CMD ["npx", "tsx", "src/start.ts"]

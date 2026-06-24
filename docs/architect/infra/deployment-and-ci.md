@@ -13,6 +13,11 @@ livelattice/
 |   |-- Dockerfile
 |   |-- package.json
 |   +-- tsconfig.json
+|-- frontend/                     # React frontend static app
+|   |-- src/
+|   |-- Dockerfile
+|   |-- nginx.conf
+|   +-- package.json
 |-- realtime/                     # NestJS Realtime Service
 |   |-- src/
 |   |-- test/
@@ -79,6 +84,11 @@ services:
     ports: ["3002:3002"]
     depends_on: [redis, kafka]
 
+  frontend:
+    build: ./frontend
+    ports: ["8088:80"]
+    depends_on: [gateway]
+
   core:
     build: ./core
     ports: ["8080:8080"]
@@ -115,7 +125,7 @@ jobs:
   test:
     strategy:
       matrix:
-        service: [gateway, realtime, core, search, notifications]
+        service: [gateway, realtime, frontend, core, search, notifications]
     steps:
       - uses: actions/checkout@v4
       - name: Start test dependencies

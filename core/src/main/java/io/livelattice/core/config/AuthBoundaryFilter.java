@@ -88,7 +88,7 @@ public class AuthBoundaryFilter extends OncePerRequestFilter {
     }
 
     private boolean isPublic(String path) {
-        return path.equals("/health") || path.equals("/ready");
+        return path.equals("/health") || path.equals("/ready") || path.startsWith("/actuator/");
     }
 
     private boolean blank(String value) {

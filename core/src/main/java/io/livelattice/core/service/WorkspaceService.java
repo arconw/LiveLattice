@@ -1,5 +1,21 @@
 package io.livelattice.core.service;
 
+import io.livelattice.core.event.ApiKeyCreated;
+import io.livelattice.core.event.DashboardCreated;
+import io.livelattice.core.event.DashboardDeleted;
+import io.livelattice.core.event.DashboardUpdated;
+import io.livelattice.core.event.DataSourceCreated;
+import io.livelattice.core.event.DataSourceDeleted;
+import io.livelattice.core.event.DataSourceUpdated;
+import io.livelattice.core.event.EventPublisher;
+import io.livelattice.core.event.MemberInvited;
+import io.livelattice.core.event.MemberRemoved;
+import io.livelattice.core.event.MemberRoleChanged;
+import io.livelattice.core.event.SettingsUpdated;
+import io.livelattice.core.event.TierChanged;
+import io.livelattice.core.event.WorkspaceCreated;
+import io.livelattice.core.event.WorkspaceDeleted;
+import io.livelattice.core.event.WorkspaceUpdated;
 import io.livelattice.core.exception.ConflictException;
 import io.livelattice.core.exception.NotFoundException;
 import io.livelattice.core.model.dto.AddMemberRequest;
@@ -31,17 +47,20 @@ public class WorkspaceService {
     private final UserRepository userRepository;
     private final PermissionService permissionService;
     private final QuotaService quotaService;
+    private final EventPublisher eventPublisher;
 
     public WorkspaceService(WorkspaceRepository workspaceRepository,
                              WorkspaceMemberRepository memberRepository,
                              UserRepository userRepository,
                              PermissionService permissionService,
-                             QuotaService quotaService) {
+                             QuotaService quotaService,
+                             EventPublisher eventPublisher) {
         this.workspaceRepository = workspaceRepository;
         this.memberRepository = memberRepository;
         this.userRepository = userRepository;
         this.permissionService = permissionService;
         this.quotaService = quotaService;
+        this.eventPublisher = eventPublisher;
     }
 
     private UUID resolveUserId(String externalSubject) {
@@ -71,6 +90,8 @@ public class WorkspaceService {
 
         WorkspaceMember owner = new WorkspaceMember(workspace.getId(), internalUserId, Role.OWNER, internalUserId);
         memberRepository.save(owner);
+
+        eventPublisher.publish(new WorkspaceCreated(workspace.getId(), internalUserId));
 
         return WorkspaceResponse.from(workspace);
     }
@@ -105,11 +126,20 @@ public class WorkspaceService {
             }
             workspace.setSlug(request.slug());
         }
+        boolean tierChanged = false;
+        String previousTier = workspace.getTier().name();
         if (request.tier() != null) {
+            tierChanged = !previousTier.equalsIgnoreCase(request.tier());
             workspace.setTier(Tier.valueOf(request.tier()));
         }
         workspace.setUpdatedAt(Instant.now());
         workspace = workspaceRepository.save(workspace);
+
+        eventPublisher.publish(new WorkspaceUpdated(workspace.getId(), resolveUserId(userId)));
+        if (tierChanged) {
+            eventPublisher.publish(new TierChanged(workspace.getId(), resolveUserId(userId), workspace.getTier().name()));
+        }
+
         return WorkspaceResponse.from(workspace);
     }
 
@@ -120,6 +150,8 @@ public class WorkspaceService {
         workspace.setDeletedAt(Instant.now());
         workspace.setUpdatedAt(Instant.now());
         workspaceRepository.save(workspace);
+
+        eventPublisher.publish(new WorkspaceDeleted(workspace.getId(), resolveUserId(userId)));
     }
 
     @Transactional(readOnly = true)
@@ -152,6 +184,9 @@ public class WorkspaceService {
 
         WorkspaceMember member = new WorkspaceMember(wsUuid, invitedUuid, request.role(), inviterUuid);
         member = memberRepository.save(member);
+
+        eventPublisher.publish(new MemberInvited(wsUuid, invitedUuid, inviterUuid));
+
         return MemberResponse.from(member, invitedUser);
     }
 
@@ -163,6 +198,9 @@ public class WorkspaceService {
         permissionService.requirePermission(workspaceId, resolveUserId(userId).toString(), "member:change_role");
         member.setRole(request.role());
         member = memberRepository.save(member);
+
+        eventPublisher.publish(new MemberRoleChanged(UUID.fromString(workspaceId), targetUuid, resolveUserId(userId)));
+
         return MemberResponse.from(member, targetUser);
     }
 
@@ -178,5 +216,7 @@ public class WorkspaceService {
             .orElseThrow(() -> new NotFoundException("Member not found: " + targetUserId));
         permissionService.requirePermission(workspaceId, resolveUserId(userId).toString(), "member:remove");
         memberRepository.delete(member);
+
+        eventPublisher.publish(new MemberRemoved(UUID.fromString(workspaceId), targetUuid, resolveUserId(userId)));
     }
 }

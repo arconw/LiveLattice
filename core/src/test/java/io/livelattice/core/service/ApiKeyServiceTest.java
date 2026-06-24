@@ -13,6 +13,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.livelattice.core.config.AuthProperties;
+import io.livelattice.core.event.EventPublisher;
 import io.livelattice.core.exception.UnauthorizedException;
 import io.livelattice.core.model.dto.ApiKeyCreatedResponse;
 import io.livelattice.core.model.dto.CreateApiKeyRequest;
@@ -54,6 +55,8 @@ class ApiKeyServiceTest {
     private StringRedisTemplate redisTemplate;
     @Mock
     private ValueOperations<String, String> valueOperations;
+    @Mock
+    private EventPublisher eventPublisher;
 
     private final UUID workspaceId = UUID.randomUUID();
     private final User user = new User("subject-1", "owner@example.com", "Owner");
@@ -71,6 +74,7 @@ class ApiKeyServiceTest {
             permissionService,
             redisTemplate,
             properties,
+            eventPublisher,
             new BCryptPasswordEncoder(4),
             new SecureRandom()
         );

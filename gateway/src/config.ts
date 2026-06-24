@@ -28,6 +28,12 @@ export interface RateLimitConfig {
   max: number;
 }
 
+export interface KafkaConfig {
+  enabled: boolean;
+  brokers: string[];
+  auditTopic: string;
+}
+
 export interface GatewayConfig {
   name: string;
   version: string;
@@ -37,6 +43,7 @@ export interface GatewayConfig {
   auth: AuthConfig;
   rateLimit: RateLimitConfig;
   routes: ServiceRouteMap;
+  kafka: KafkaConfig;
 }
 
 function value(source: NodeJS.ProcessEnv, key: string, fallback: string): string {
@@ -59,6 +66,14 @@ function boolValue(source: NodeJS.ProcessEnv, key: string, fallback: boolean): b
     return fallback;
   }
   return ["1", "true", "yes", "on"].includes(raw.toLowerCase());
+}
+
+function listValue(source: NodeJS.ProcessEnv, key: string, fallback: string[]): string[] {
+  const raw = source[key];
+  if (raw === undefined || raw.length === 0) {
+    return fallback;
+  }
+  return raw.split(",").map((item) => item.trim()).filter((item) => item.length > 0);
 }
 
 function localUrl(host: string, port: number): string {
@@ -109,6 +124,11 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): GatewayConf
       "audit-log": value(source, "AUDIT_LOG_URL", localUrl("audit-log", 8084)),
       "background-jobs": value(source, "BACKGROUND_JOBS_URL", localUrl("background-jobs", 8085)),
       realtime: value(source, "REALTIME_URL", localUrl("realtime", 3002))
+    },
+    kafka: {
+      enabled: boolValue(source, "KAFKA_ENABLED", true),
+      brokers: listValue(source, "KAFKA_BROKERS", ["localhost:9092"]),
+      auditTopic: value(source, "KAFKA_AUDIT_TOPIC", "livelattice.audit.events")
     }
   };
 }

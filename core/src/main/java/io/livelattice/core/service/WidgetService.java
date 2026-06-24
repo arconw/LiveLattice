@@ -1,5 +1,7 @@
 package io.livelattice.core.service;
 
+import io.livelattice.core.event.DashboardUpdated;
+import io.livelattice.core.event.EventPublisher;
 import io.livelattice.core.exception.BadRequestException;
 import io.livelattice.core.exception.ForbiddenException;
 import io.livelattice.core.exception.NotFoundException;
@@ -37,19 +39,22 @@ public class WidgetService {
     private final DataSourceService dataSourceService;
     private final QueryEngine queryEngine;
     private final PermissionService permissionService;
+    private final EventPublisher eventPublisher;
 
     public WidgetService(WidgetRepository widgetRepository,
                          DashboardRepository dashboardRepository,
                          UserRepository userRepository,
                          DataSourceService dataSourceService,
                          QueryEngine queryEngine,
-                         PermissionService permissionService) {
+                         PermissionService permissionService,
+                         EventPublisher eventPublisher) {
         this.widgetRepository = widgetRepository;
         this.dashboardRepository = dashboardRepository;
         this.userRepository = userRepository;
         this.dataSourceService = dataSourceService;
         this.queryEngine = queryEngine;
         this.permissionService = permissionService;
+        this.eventPublisher = eventPublisher;
     }
 
     private User resolveUser(String externalSubject) {
@@ -123,6 +128,7 @@ public class WidgetService {
             position
         );
         widget = widgetRepository.save(widget);
+        eventPublisher.publish(new DashboardUpdated(dashboard.getId(), dashboard.getWorkspaceId(), internalUserId));
         return WidgetResponse.from(widget);
     }
 
@@ -188,6 +194,7 @@ public class WidgetService {
         widget = widgetRepository.save(widget);
 
         queryEngine.invalidate(widget.getId().toString());
+        eventPublisher.publish(new DashboardUpdated(dashboard.getId(), dashboard.getWorkspaceId(), internalUserId));
         return WidgetResponse.from(widget);
     }
 
@@ -198,6 +205,7 @@ public class WidgetService {
         permissionService.requirePermission(dashboard.getWorkspaceId().toString(), internalUserId.toString(), "widget:delete");
         widgetRepository.delete(widget);
         queryEngine.invalidate(widget.getId().toString());
+        eventPublisher.publish(new DashboardUpdated(dashboard.getId(), dashboard.getWorkspaceId(), internalUserId));
     }
 
     @Transactional(readOnly = true)

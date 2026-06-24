@@ -1,0 +1,78 @@
+spring:
+  application:
+    name: background-jobs
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:livelattice}
+    username: ${POSTGRES_USER:livelattice}
+    password: ${POSTGRES_PASSWORD:livelattice_dev_password}
+    hikari:
+      maximum-pool-size: 4
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  kafka:
+    bootstrap-servers: ${KAFKA_BROKERS:localhost:9092}
+    consumer:
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 0
+    locations: classpath:db/migration
+
+server:
+  port: 8085
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  metrics:
+    tags:
+      service: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+      percentiles:
+        http.server.requests: 0.5,0.95,0.99
+
+livelattice:
+  auth:
+    internal-secret: ${INTERNAL_AUTH_SECRET:livelattice_internal_dev_secret}
+  jobs:
+    worker:
+      enabled: ${JOBS_WORKER_ENABLED:true}
+      worker-id: ${HOSTNAME:background-jobs-1}
+      poll-timeout-seconds: 5
+      progress-report-seconds: 5
+      shutdown-timeout-seconds: 30
+      default-max-retries: 3
+      default-retry-delay-seconds: 60
+    export:
+      concurrency: 5
+      max-execution-minutes: 30
+    import:
+      concurrency: 3
+      max-execution-minutes: 60
+    cleanup:
+      concurrency: 1
+      cron: ${JOBS_CLEANUP_CRON:0 0 3 * * *}
+    digest:
+      concurrency: 1
+      cron: ${JOBS_DIGEST_CRON:0 0 * * * *}
+    import-export:
+      job-topic: ${IMPORT_EXPORT_JOB_TOPIC:import-export-jobs}
+      service-url: ${IMPORT_EXPORT_URL:http://localhost:8083}
+      internal-secret: ${INTERNAL_AUTH_SECRET:livelattice_internal_dev_secret}
+    dead-letter-alert-threshold: ${JOBS_DEAD_LETTER_ALERT_THRESHOLD:100}

@@ -11,7 +11,7 @@ services:
       - "4318:4318"
       - "8889:8889"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:13133/ >/dev/null"]
+      test: ["CMD", "/otelcol-contrib", "validate", "--config=/etc/otelcol-contrib/config.yaml"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -26,6 +26,7 @@ services:
       - --web.enable-lifecycle
     volumes:
       - ./infra/observability/prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
+      - ./infra/observability/prometheus-rules.yaml:/etc/prometheus/rules/livelattice.yaml:ro
       - prometheus_data:/prometheus
     ports:
       - "${PROMETHEUS_PORT:-9090}:9090"
@@ -73,15 +74,29 @@ services:
     ports:
       - "${LOKI_PORT:-3100}:3100"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3100/ready >/dev/null"]
+      test: ["CMD", "/usr/bin/loki", "-config.file=/etc/loki/local-config.yaml", "-verify-config"]
       interval: 10s
       timeout: 5s
       retries: 12
     networks:
       - livelattice
 
+  promtail:
+    image: grafana/promtail:3.6.3
+    command: ["-config.file=/etc/promtail/config.yaml"]
+    volumes:
+      - ./infra/observability/promtail.yaml:/etc/promtail/config.yaml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      loki:
+        condition: service_started
+    networks:
+      - livelattice
+
   tempo:
     image: grafana/tempo:2.9.0
+    user: "0:0"
     command: ["-config.file=/etc/tempo.yaml"]
     volumes:
       - ./infra/observability/tempo.yaml:/etc/tempo.yaml:ro
@@ -89,7 +104,7 @@ services:
     ports:
       - "${TEMPO_PORT:-3200}:3200"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3200/ready >/dev/null"]
+      test: ["CMD", "/busybox/wget", "-qO-", "http://localhost:3200/ready"]
       interval: 10s
       timeout: 5s
       retries: 12

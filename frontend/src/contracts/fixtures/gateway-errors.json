@@ -1,0 +1,33 @@
+{
+  "400": {
+    "code": "VALIDATION_ERROR",
+    "message": "Canvas title is required.",
+    "fieldErrors": {
+      "title": ["Required"]
+    }
+  },
+  "401": {
+    "code": "AUTHENTICATION_REQUIRED",
+    "message": "Authentication is required."
+  },
+  "403": {
+    "code": "PERMISSION_DENIED",
+    "message": "Workspace role does not allow this action."
+  },
+  "404": {
+    "code": "NOT_FOUND",
+    "message": "Canvas was deleted or does not exist."
+  },
+  "409": {
+    "code": "CONFLICT",
+    "message": "Canvas version conflict."
+  },
+  "429": {
+    "code": "RATE_LIMITED",
+    "message": "Workspace rate limit exceeded."
+  },
+  "500": {
+    "code": "SERVICE_ERROR",
+    "message": "Gateway upstream failed."
+  }
+}

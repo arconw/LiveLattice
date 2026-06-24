@@ -12,12 +12,14 @@ export interface CanvasOpPayload {
   canvasId: string;
   ops: CanvasOperation[];
   version?: number;
+  lockVersion?: number;
   seq?: number;
 }
 
 export interface CanvasAck {
   canvasId: string;
   version: number;
+  lockVersion?: number;
   seq?: number;
 }
 
@@ -25,6 +27,7 @@ export interface BroadcastOp {
   canvasId: string;
   ops: CanvasOperation[];
   version: number;
+  lockVersion?: number;
   seq?: number;
   origin: string;
 }
@@ -67,24 +70,27 @@ export class CollaborationEngine {
     return this.docs.get(canvasId)?.doc;
   }
 
-  async applyOperations(payload: CanvasOpPayload, origin: string, options?: { trustVersion?: boolean }): Promise<{ ack: CanvasAck; broadcast: BroadcastOp }> {
+  async applyOperations(payload: CanvasOpPayload, origin: string, options?: { trustVersion?: boolean; forceVersion?: boolean }): Promise<{ ack: CanvasAck; broadcast: BroadcastOp }> {
     const entry = this.ensureDoc(payload.canvasId);
     for (const op of payload.ops) {
       this.applyOp(entry.doc, op);
     }
     const trustVersion = options?.trustVersion ?? false;
-    const version = trustVersion && payload.version && payload.version > entry.version ? payload.version : entry.version + 1;
+    const trustedVersion = payload.version;
+    const version = trustVersion && typeof trustedVersion === "number" ? (options?.forceVersion ? trustedVersion : Math.max(entry.version, trustedVersion)) : entry.version + 1;
     entry.version = version;
     entry.opsSinceSnapshot += payload.ops.length;
     const ack: CanvasAck = {
       canvasId: payload.canvasId,
       version: entry.version,
+      lockVersion: payload.lockVersion,
       seq: payload.seq
     };
     const broadcast: BroadcastOp = {
       canvasId: payload.canvasId,
       ops: payload.ops,
       version: entry.version,
+      lockVersion: payload.lockVersion,
       seq: payload.seq,
       origin
     };

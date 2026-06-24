@@ -1,0 +1,33 @@
+name: livelattice-k6
+
+services:
+  k6:
+    image: grafana/k6:0.55.2
+    user: ${K6_DOCKER_USER:-12345:12345}
+    working_dir: /scripts
+    environment:
+      BASE_URL: ${BASE_URL:-http://gateway:3000}
+      CORE_BASE_URL: ${CORE_BASE_URL:-http://core:8080}
+      REALTIME_BASE_URL: ${REALTIME_BASE_URL:-http://realtime:3002}
+      SEARCH_BASE_URL: ${SEARCH_BASE_URL:-http://search:8081}
+      NOTIFICATIONS_BASE_URL: ${NOTIFICATIONS_BASE_URL:-http://notifications:8082}
+      IMPORT_EXPORT_BASE_URL: ${IMPORT_EXPORT_BASE_URL:-http://import-export:8083}
+      AUDIT_LOG_BASE_URL: ${AUDIT_LOG_BASE_URL:-http://audit-log:8084}
+      BACKGROUND_JOBS_BASE_URL: ${BACKGROUND_JOBS_BASE_URL:-http://background-jobs:8085}
+      PROMETHEUS_BASE_URL: ${PROMETHEUS_BASE_URL:-http://prometheus:9090}
+      K6_PROFILE: ${K6_PROFILE:-smoke}
+      K6_AUTH_USERNAME: ${K6_AUTH_USERNAME:-}
+      K6_AUTH_PASSWORD: ${K6_AUTH_PASSWORD:-}
+      K6_AUTH_TOKEN: ${K6_AUTH_TOKEN:-}
+      K6_WORKSPACE_ID: ${K6_WORKSPACE_ID:-}
+      K6_SKIP_PROMETHEUS: ${K6_SKIP_PROMETHEUS:-false}
+    volumes:
+      - ./:/scripts:ro
+      - ./reports:/scripts/reports
+    networks:
+      - livelattice
+
+networks:
+  livelattice:
+    external: true
+    name: livelattice_default

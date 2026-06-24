@@ -6,6 +6,7 @@ import static org.mockito.Mockito.*;
 
 import io.livelattice.core.event.CanvasCreated;
 import io.livelattice.core.event.CanvasDeleted;
+import io.livelattice.core.event.CanvasRestored;
 import io.livelattice.core.event.CanvasUpdated;
 import io.livelattice.core.event.EventPublisher;
 import io.livelattice.core.exception.ConflictException;
@@ -235,6 +236,33 @@ class CanvasServiceTest {
         assertEquals(1, response.version());
         assertEquals(0, response.operationCountSinceSnapshot());
         verify(eventPublisher).publish(any(CanvasCreated.class));
+    }
+
+    @Test
+    void restoreSnapshot_shouldPublishRestoreAuditEvent() {
+        User user = user();
+        Canvas canvas = new Canvas(UUID.fromString(workspaceId), "Old", Map.of("elements", List.of(Map.of("id", "old"))), user.getId());
+        canvas.setId(UUID.fromString(canvasId));
+        canvas.setVersion(2);
+        Canvas restored = new Canvas(UUID.fromString(workspaceId), "Old", Map.of("elements", List.of(Map.of("id", "restored"))), user.getId());
+        restored.setId(UUID.fromString(canvasId));
+        restored.setVersion(3);
+
+        when(userRepository.findByExternalSubject(userId)).thenReturn(Optional.of(user));
+        when(canvasRepository.findByIdAndDeletedAtIsNull(UUID.fromString(canvasId))).thenReturn(Optional.of(canvas));
+        doNothing().when(permissionService).requirePermission(workspaceId, user.getId().toString(), "canvas:edit");
+        when(snapshotManager.restoreSnapshot(UUID.fromString(canvasId), 2L, user.getId())).thenReturn(restored);
+
+        CanvasResponse response = canvasService.restoreSnapshot(canvasId, 2L, userId);
+
+        assertEquals(3, response.version());
+        verify(eventPublisher).publish(argThat((CanvasRestored event) ->
+            event.canvasId().equals(UUID.fromString(canvasId))
+                && event.workspaceId().equals(UUID.fromString(workspaceId))
+                && event.userId().equals(user.getId())
+                && event.restoredSnapshotVersion() == 2L
+                && event.version() == 3L
+        ));
     }
 
     @Test

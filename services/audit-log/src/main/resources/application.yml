@@ -1,0 +1,65 @@
+spring:
+  application:
+    name: audit-log
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:livelattice}
+    username: ${POSTGRES_USER:livelattice}
+    password: ${POSTGRES_PASSWORD:livelattice_dev_password}
+    hikari:
+      maximum-pool-size: 4
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+  flyway:
+    enabled: true
+  kafka:
+    bootstrap-servers: ${KAFKA_BROKERS:localhost:9092}
+    consumer:
+      group-id: ${AUDIT_LOG_KAFKA_GROUP_ID:livelattice-audit-log}
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
+server:
+  port: 8084
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  metrics:
+    tags:
+      service: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+      percentiles:
+        http.server.requests: 0.5,0.95,0.99
+
+livelattice:
+  auth:
+    internal-secret: ${INTERNAL_AUTH_SECRET:livelattice_internal_dev_secret}
+    storage-access-key: ${STORAGE_ACCESS_KEY:livelattice}
+    storage-secret-key: ${STORAGE_SECRET_KEY:livelattice_dev_password}
+  audit:
+    kafka-enabled: ${AUDIT_LOG_KAFKA_ENABLED:true}
+    kafka-group-id: ${AUDIT_LOG_KAFKA_GROUP_ID:livelattice-audit-log}
+    kafka-topics: ${AUDIT_LOG_KAFKA_TOPICS:livelattice.audit.events}
+    verification-batch-size: ${AUDIT_LOG_VERIFICATION_BATCH_SIZE:1000}
+    export-bucket: ${AUDIT_LOG_EXPORT_BUCKET:audit-exports}
+    export-prefix: ${AUDIT_LOG_EXPORT_PREFIX:audit-exports}
+    archive-bucket: ${AUDIT_LOG_ARCHIVE_BUCKET:audit-archive}
+    archive-prefix: ${AUDIT_LOG_ARCHIVE_PREFIX:audit-archive}
+    storage-endpoint: ${STORAGE_ENDPOINT:http://localhost:9100}
+    export-processing-interval-ms: ${AUDIT_LOG_EXPORT_PROCESSING_INTERVAL_MS:5000}
+    retention-cron: ${AUDIT_LOG_RETENTION_CRON:0 0 3 * * *}
+    retention-hot-days: ${AUDIT_LOG_RETENTION_HOT_DAYS:90}

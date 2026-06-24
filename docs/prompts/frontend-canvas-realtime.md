@@ -140,9 +140,8 @@ Use documented realtime messages:
 | Client -> Server | `canvas:op` | `{ ops: Op[], version: number, seq: number }` |
 | Server -> Client | `canvas:ack` | `{ version: number, seq: number }` |
 | Server -> Client | `canvas:op` | `{ ops: Op[], origin: string }` |
-| Client -> Server | `awareness:update` | `{ cursor: { x, y }, selection: string[] }` |
-| Server -> Client | `awareness:state` | `{ clients: [{ id, cursor, name }] }` |
-| Client -> Server | `presence:away` | `{ status: "away" | "online" }` |
+| Client -> Server | `presence:update` | `{ canvasId, cursor: { x, y }, selection: string[], status: "away" | "online" }` |
+| Server -> Client | `presence:update` | `{ canvasId, subject, displayName, payload: { cursor, selection, status } }` |
 | Server -> Client | `room:join` / `room:leave` | `{ userId, userName }` |
 
 If actual implementation differs, update docs and tests before coding against the difference.

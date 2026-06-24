@@ -10,10 +10,14 @@ import { GatewayMetrics } from "./metrics";
 import { ProxyService } from "./proxy";
 import type { IdentityHeaders } from "./proxy";
 import { FixedWindowRateLimiter } from "./rate-limit";
+import type { KafkaProducerAdapter } from "./kafka";
+import { createProducer } from "./kafka";
+import { createLogger } from "./logger";
 
 export interface CreateAppOptions {
   env?: NodeJS.ProcessEnv;
   config?: GatewayConfig;
+  kafka?: KafkaProducerAdapter;
 }
 
 const startedAtKey = Symbol("startedAt");
@@ -25,6 +29,8 @@ export async function createApp(options: CreateAppOptions = {}): Promise<NestFas
   const limiter = new FixedWindowRateLimiter(config.rateLimit);
   const auth = new AuthService(config.auth);
   const proxy = new ProxyService(config.routes);
+  const kafka = options.kafka ?? await createProducer(config.kafka);
+  const logger = createLogger(config.name);
   const adapter = new FastifyAdapter({ logger: false, bodyLimit: config.bodyLimitBytes });
   (adapter as FastifyAdapter & { useRawBody?: boolean }).useRawBody = true;
   const app = await NestFactory.create<NestFastifyApplication>(AppModule.register(config, metrics), adapter, { bufferLogs: true });
@@ -73,14 +79,21 @@ export async function createApp(options: CreateAppOptions = {}): Promise<NestFas
     const startedAt = Reflect.get(request, startedAtKey) as bigint | undefined;
     const durationSeconds = startedAt ? Number(process.hrtime.bigint() - startedAt) / 1_000_000_000 : 0;
     metrics.finish(request.method, routeLabel(request), reply.statusCode, durationSeconds);
+    logger.info({
+      request_id: headerValue(request.headers["x-request-id"]),
+      method: request.method,
+      path: routeLabel(request),
+      status: reply.statusCode,
+      duration_ms: Number((durationSeconds * 1000).toFixed(3))
+    }, "http request completed");
   });
 
-  server.post("/auth/login", async (request, reply) => handleLogin(auth, request, reply));
-  server.post("/auth/refresh", async (request, reply) => handleRefresh(auth, request, reply));
-  server.post("/auth/logout", async (request, reply) => handleLogout(auth, request, reply));
+  server.post("/auth/login", async (request, reply) => handleLogin(auth, kafka, config, request, reply));
+  server.post("/auth/refresh", async (request, reply) => handleRefresh(auth, kafka, config, request, reply));
+  server.post("/auth/logout", async (request, reply) => handleLogout(auth, kafka, config, request, reply));
   server.post("/auth/social", async (request, reply) => handleSocial(auth, request, reply));
-  server.post("/auth/mfa/setup", async (_request, reply) => reply.send(auth.mfaSetup()));
-  server.post("/auth/mfa/verify", async (_request, reply) => reply.send(auth.mfaVerify()));
+  server.post("/auth/mfa/setup", async (request, reply) => handleMfa(auth, kafka, config, request, reply, "auth.mfa_enable"));
+  server.post("/auth/mfa/verify", async (request, reply) => handleMfa(auth, kafka, config, request, reply, "auth.mfa_disable"));
   server.all("/auth/keys", async (request, reply) => proxy.forwardPrefix(request, reply, config.routes.core, "/auth/keys", identity(request)));
   server.all("/auth/keys/*", async (request, reply) => proxy.forwardPrefix(request, reply, config.routes.core, "/auth/keys", identity(request)));
   server.all("/api/:service", async (request, reply) => proxy.forward(request, reply, identity(request)));
@@ -90,6 +103,9 @@ export async function createApp(options: CreateAppOptions = {}): Promise<NestFas
   const originalClose = app.close.bind(app);
   app.close = async () => {
     await auth.close();
+    if (kafka) {
+      await kafka.close();
+    }
     await originalClose();
   };
   return app;
@@ -116,6 +132,10 @@ function isProtectedRoute(request: FastifyRequest): boolean {
     || matchesRoutePrefix(url, "/api/search")
     || matchesRoutePrefix(url, "/api/notifications")
     || matchesRoutePrefix(url, "/api/import-export")
+    || matchesRoutePrefix(url, "/api/audit-log")
+    || matchesRoutePrefix(url, "/api/background-jobs")
+    || matchesRoutePrefix(url, "/auth/logout")
+    || matchesRoutePrefix(url, "/auth/mfa")
     || matchesRoutePrefix(url, "/auth/keys");
 }
 
@@ -141,44 +161,64 @@ function routeLabel(request: FastifyRequest): string {
   return raw.split("?")[0] || "/";
 }
 
-async function handleLogin(auth: AuthService, request: FastifyRequest, reply: FastifyReply): Promise<void> {
+async function handleLogin(auth: AuthService, kafka: KafkaProducerAdapter | undefined, config: GatewayConfig, request: FastifyRequest, reply: FastifyReply): Promise<void> {
   const body = request.body as { email?: string; password?: string } | undefined;
   if (!body?.email || !body.password) {
     reply.code(400).send({ error: "email and password are required" });
     return;
   }
   try {
-    reply.send(await auth.login(body.email, body.password));
+    const response = await auth.login(body.email, body.password);
+    await publishAuthEvent(kafka, config, "auth.login", response.user.subject, authMetadata(response.user));
+    reply.send(response);
   } catch (error) {
     reply.code(401).send({ error: error instanceof Error ? error.message : "Login failed" });
   }
 }
 
-async function handleRefresh(auth: AuthService, request: FastifyRequest, reply: FastifyReply): Promise<void> {
+async function handleRefresh(auth: AuthService, kafka: KafkaProducerAdapter | undefined, config: GatewayConfig, request: FastifyRequest, reply: FastifyReply): Promise<void> {
   const body = request.body as { refreshToken?: string } | undefined;
   if (!body?.refreshToken) {
     reply.code(400).send({ error: "refreshToken is required" });
     return;
   }
   try {
-    reply.send(await auth.refresh(body.refreshToken));
+    const response = await auth.refresh(body.refreshToken);
+    await publishAuthEvent(kafka, config, "auth.refresh", response.user.subject, authMetadata(response.user));
+    reply.send(response);
   } catch (error) {
     reply.code(401).send({ error: error instanceof Error ? error.message : "Refresh failed" });
   }
 }
 
-async function handleLogout(auth: AuthService, request: FastifyRequest, reply: FastifyReply): Promise<void> {
+async function handleLogout(auth: AuthService, kafka: KafkaProducerAdapter | undefined, config: GatewayConfig, request: FastifyRequest, reply: FastifyReply): Promise<void> {
   const body = request.body as { refreshToken?: string } | undefined;
+  const currentIdentity = identity(request);
+  if (!currentIdentity) {
+    reply.code(401).send({ error: "Authenticated user is required" });
+    return;
+  }
   if (!body?.refreshToken) {
     reply.code(400).send({ error: "refreshToken is required" });
     return;
   }
   try {
     await auth.logout(body.refreshToken);
+    await publishAuthEvent(kafka, config, "auth.logout", currentIdentity.subject, authMetadata(currentIdentity));
     reply.code(204).send();
   } catch (error) {
     reply.code(502).send({ error: error instanceof Error ? error.message : "Logout failed" });
   }
+}
+
+async function handleMfa(auth: AuthService, kafka: KafkaProducerAdapter | undefined, config: GatewayConfig, request: FastifyRequest, reply: FastifyReply, action: string): Promise<void> {
+  const currentIdentity = identity(request);
+  if (!currentIdentity) {
+    reply.code(401).send({ error: "Authenticated user is required" });
+    return;
+  }
+  reply.send(action === "auth.mfa_enable" ? auth.mfaSetup() : auth.mfaVerify());
+  await publishAuthEvent(kafka, config, action, currentIdentity.subject, authMetadata(currentIdentity));
 }
 
 async function handleSocial(auth: AuthService, request: FastifyRequest, reply: FastifyReply): Promise<void> {
@@ -188,4 +228,37 @@ async function handleSocial(auth: AuthService, request: FastifyRequest, reply: F
     return;
   }
   reply.send(auth.socialLogin(body.provider, body.redirectUri));
+}
+
+function authMetadata(actor: { email?: string; displayName?: string }): Record<string, unknown> {
+  const metadata: Record<string, unknown> = {};
+  if (actor.email) {
+    metadata.email = actor.email;
+  }
+  if (actor.displayName) {
+    metadata.displayName = actor.displayName;
+  }
+  return metadata;
+}
+
+async function publishAuthEvent(kafka: KafkaProducerAdapter | undefined, config: GatewayConfig, action: string, subject: string, metadata: Record<string, unknown> | null): Promise<void> {
+  if (!kafka) {
+    return;
+  }
+  const eventId = randomUUID();
+  const event = {
+    eventType: action,
+    targetType: "auth",
+    id: eventId,
+    targetId: subject,
+    workspaceId: subject,
+    actorId: subject,
+    changes: metadata ?? {},
+    metadata: { source: "gateway" },
+    occurredAt: new Date().toISOString()
+  };
+  try {
+    await kafka.send({ topic: config.kafka.auditTopic, messages: [{ key: eventId, value: JSON.stringify(event) }] });
+  } catch {
+  }
 }

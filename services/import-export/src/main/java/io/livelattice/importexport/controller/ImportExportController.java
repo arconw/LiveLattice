@@ -10,6 +10,7 @@ import io.livelattice.importexport.exception.ForbiddenException;
 import io.livelattice.importexport.model.JobState;
 import io.livelattice.importexport.model.JobStatus;
 import io.livelattice.importexport.service.ArtifactService;
+import io.livelattice.importexport.service.AuditEventPublisher;
 import io.livelattice.importexport.service.CanvasLookupService;
 import io.livelattice.importexport.service.FileValidator;
 import io.livelattice.importexport.service.FormatTransformer;
@@ -17,6 +18,7 @@ import io.livelattice.importexport.service.ImportExportAuthorizationService;
 import io.livelattice.importexport.service.JobService;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -44,6 +46,7 @@ public class ImportExportController {
     private final JobService jobService;
     private final ArtifactService artifactService;
     private final ImportExportAuthorizationService authorizationService;
+    private final AuditEventPublisher auditEventPublisher;
     private final ObjectMapper objectMapper;
     private final ImportExportProperties properties;
 
@@ -53,6 +56,7 @@ public class ImportExportController {
                                   JobService jobService,
                                   ArtifactService artifactService,
                                   ImportExportAuthorizationService authorizationService,
+                                  AuditEventPublisher auditEventPublisher,
                                   ObjectMapper objectMapper,
                                   ImportExportProperties properties) {
         this.fileValidator = fileValidator;
@@ -61,6 +65,7 @@ public class ImportExportController {
         this.jobService = jobService;
         this.artifactService = artifactService;
         this.authorizationService = authorizationService;
+        this.auditEventPublisher = auditEventPublisher;
         this.objectMapper = objectMapper;
         this.properties = properties;
     }
@@ -73,13 +78,14 @@ public class ImportExportController {
         fileValidator.validate(file);
         UUID workspaceId = UUID.fromString(options.workspaceId());
         canvasLookupService.requireWorkspacePermission(workspaceId, userSubject, "canvas:create");
+        String filename = file.getOriginalFilename() != null ? file.getOriginalFilename() : "import";
         if (file.getSize() <= properties.syncThresholdBytes()) {
             Map<String, Object> canvas = transformer.importFile(file, options.title());
             UUID canvasId = canvasLookupService.save(canvas, workspaceId, userSubject);
+            auditEventPublisher.publishCanvasImport(workspaceId, canvasId, userSubject, importMetadata("sync", null, filename, options.title()));
             return ResponseEntity.ok(new ImportResponse(canvasId, null, "completed", "Canvas imported synchronously"));
         }
         UUID jobId = jobService.createJob("import", workspaceId, userSubject);
-        String filename = file.getOriginalFilename() != null ? file.getOriginalFilename() : "import";
         String stagedPath = artifactService.stageImportFile(workspaceId, jobId, filename, file.getBytes());
         Map<String, Object> payload = Map.of(
             "type", "import",
@@ -108,8 +114,8 @@ public class ImportExportController {
                                                                  @RequestHeader("x-auth-subject") String userSubject) throws Exception {
         Map<String, Object> canvas = canvasLookupService.load(canvasId, userSubject);
         byte[] content = exportContent(canvas, format);
+        UUID workspaceId = canvasWorkspaceId(canvas);
         if (content.length > properties.syncThresholdBytes()) {
-            UUID workspaceId = UUID.fromString(String.valueOf(canvas.getOrDefault("workspaceId", "00000000-0000-0000-0000-000000000000")));
             UUID jobId = jobService.createJob("export", workspaceId, userSubject);
             Map<String, Object> payload = Map.of(
                 "type", "export",
@@ -127,6 +133,7 @@ public class ImportExportController {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(contentType(format));
         headers.setContentDispositionFormData("attachment", "canvas-" + canvasId + "." + format);
+        auditEventPublisher.publishCanvasExport(workspaceId, canvasId, userSubject, exportMetadata("sync", format, null, content.length));
         return ResponseEntity.ok().headers(headers).body(output -> output.write(content));
     }
 
@@ -250,6 +257,36 @@ public class ImportExportController {
             case "json" -> MediaType.APPLICATION_JSON;
             default -> MediaType.valueOf("image/svg+xml");
         };
+    }
+
+    private UUID canvasWorkspaceId(Map<String, Object> canvas) {
+        return UUID.fromString(String.valueOf(canvas.getOrDefault("workspaceId", "00000000-0000-0000-0000-000000000000")));
+    }
+
+    private Map<String, Object> importMetadata(String mode, UUID jobId, String filename, String title) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("mode", mode);
+        if (jobId != null) {
+            metadata.put("job_id", jobId.toString());
+        }
+        if (filename != null && !filename.isBlank()) {
+            metadata.put("filename", filename);
+        }
+        if (title != null && !title.isBlank()) {
+            metadata.put("title", title);
+        }
+        return metadata;
+    }
+
+    private Map<String, Object> exportMetadata(String mode, String format, UUID jobId, int bytes) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("mode", mode);
+        metadata.put("format", format);
+        if (jobId != null) {
+            metadata.put("job_id", jobId.toString());
+        }
+        metadata.put("bytes", bytes);
+        return metadata;
     }
 
     private HttpHeaders asyncJobHeaders(UUID jobId) {

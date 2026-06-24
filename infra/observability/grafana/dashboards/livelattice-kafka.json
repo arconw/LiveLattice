@@ -1,0 +1,30 @@
+{
+  "title": "LiveLattice Kafka",
+  "schemaVersion": 42,
+  "version": 1,
+  "refresh": "10s",
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Consumer lag",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        { "expr": "kafka_consumer_lag", "legendFormat": "{{topic}} {{partition}}" },
+        { "expr": "kafka_consumer_records_lag_max", "legendFormat": "{{client_id}}" }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Message throughput",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        { "expr": "sum(rate(kafka_messages_produced_total[5m])) by (service)", "legendFormat": "{{service}} produced" },
+        { "expr": "sum(rate(kafka_messages_consumed_total[5m])) by (service)", "legendFormat": "{{service}} consumed" }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 }
+    }
+  ]
+}

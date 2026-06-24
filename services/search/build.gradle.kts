@@ -22,6 +22,8 @@ dependencies {
     implementation("org.apache.kafka:kafka-clients")
     implementation("org.opensearch.client:opensearch-java:3.9.0")
     implementation("org.apache.httpcomponents.client5:httpclient5:5.5.1")
+    implementation("io.micrometer:micrometer-registry-prometheus")
+    implementation("net.logstash.logback:logstash-logback-encoder:9.0")
     implementation("com.fasterxml.jackson.core:jackson-databind")
     implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
     runtimeOnly("org.postgresql:postgresql")

@@ -15,7 +15,8 @@ export class HealthController {
     return {
       status: "UP",
       service: this.config.name,
-      version: this.config.version
+      version: this.config.version,
+      uptimeSeconds: Math.floor(process.uptime())
     };
   }
 
@@ -23,11 +24,21 @@ export class HealthController {
   ready() {
     return {
       status: "UP",
+      service: this.config.name,
+      version: this.config.version,
+      uptimeSeconds: Math.floor(process.uptime()),
       checks: {
         process: "UP",
         routes: Object.keys(this.config.routes).sort(),
         authRequired: this.config.auth.required
-      }
+      },
+      checkDetails: {
+        process: { status: "healthy" },
+        routes: { status: "healthy", values: Object.keys(this.config.routes).sort() },
+        auth: { status: "healthy", required: this.config.auth.required }
+      },
+      routes: Object.keys(this.config.routes).sort(),
+      authRequired: this.config.auth.required
     };
   }
 

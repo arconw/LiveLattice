@@ -13,6 +13,7 @@ import { createProducer } from "./kafka-adapter";
 import { createRealtimeServer, type RealtimeServer, type RealtimeServerDeps } from "./realtime-server";
 import { createHttpServer } from "./http-server";
 import type { KafkaProducerAdapter } from "./kafka-adapter";
+import { RealtimeMetrics } from "./metrics";
 
 export interface RealtimeRuntime {
   config: RealtimeConfig;
@@ -34,6 +35,7 @@ export async function createRuntime(config: RealtimeConfig = loadConfig()): Prom
   const presence = new PresenceService(config.presence, stores);
   const broadcast = new BroadcastService(stores, instanceId);
   const backpressure = new BackpressureTracker(config.backpressure);
+  const metrics = new RealtimeMetrics();
 
   const producer = await createProducer(config.kafka);
   const ops = new OpPersistenceService(config.kafka, producer);
@@ -51,14 +53,15 @@ export async function createRuntime(config: RealtimeConfig = loadConfig()): Prom
     snapshots: stores,
     awareness: stores,
     stores,
-    producer
+    producer,
+    metrics
   };
 
   const http = createHttpServer(config, {
     redisReady: useRedis,
     kafkaReady: config.kafka.enabled,
     authRequired: !config.auth.disabled
-  });
+  }, metrics);
   await http.ready();
 
   const httpServer = http.server;

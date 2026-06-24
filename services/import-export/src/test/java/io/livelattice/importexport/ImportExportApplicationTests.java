@@ -3,6 +3,8 @@ package io.livelattice.importexport;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -22,6 +24,7 @@ import io.livelattice.importexport.exception.ValidationException;
 import io.livelattice.importexport.model.JobState;
 import io.livelattice.importexport.model.JobStatus;
 import io.livelattice.importexport.service.ArtifactService;
+import io.livelattice.importexport.service.AuditEventPublisher;
 import io.livelattice.importexport.service.CanvasLookupService;
 import io.livelattice.importexport.service.FileValidator;
 import io.livelattice.importexport.service.FormatTransformer;
@@ -29,6 +32,7 @@ import io.livelattice.importexport.service.ImportExportAuthorizationService;
 import io.livelattice.importexport.service.JobService;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import io.minio.MinioClient;
@@ -56,7 +60,7 @@ class ImportExportApplicationTests {
 
     @Test
     void healthReturnsUp() {
-        ResponseEntity<Map<String, String>> response = healthController.health();
+        ResponseEntity<Map<String, Object>> response = healthController.health();
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).containsEntry("status", "UP");
     }
@@ -73,9 +77,10 @@ class ImportExportApplicationTests {
             return UUID.fromString((String) canvas.get("id"));
         });
 
+        AuditEventPublisher auditEventPublisher = mock(AuditEventPublisher.class);
         ImportExportController controller = new ImportExportController(
             fileValidator, formatTransformer, canvasLookupService, mock(JobService.class),
-            mock(ArtifactService.class), mock(ImportExportAuthorizationService.class), new ObjectMapper(), properties
+            mock(ArtifactService.class), mock(ImportExportAuthorizationService.class), auditEventPublisher, new ObjectMapper(), properties
         );
 
         ObjectMapper mapper = new ObjectMapper();
@@ -83,6 +88,12 @@ class ImportExportApplicationTests {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody().status()).isEqualTo("completed");
         assertThat(response.getBody().canvasId()).isNotNull();
+        verify(auditEventPublisher).publishCanvasImport(
+            eq(UUID.fromString(options.workspaceId())),
+            eq(response.getBody().canvasId()),
+            eq("test-user"),
+            argThat(metadata -> "sync".equals(metadata.get("mode")) && "test.svg".equals(metadata.get("filename")))
+        );
     }
 
     @Test
@@ -99,7 +110,7 @@ class ImportExportApplicationTests {
 
         ImportExportController controller = new ImportExportController(
             fileValidator, formatTransformer, canvasLookupService, mock(JobService.class),
-            mock(ArtifactService.class), mock(ImportExportAuthorizationService.class), new ObjectMapper(), properties
+            mock(ArtifactService.class), mock(ImportExportAuthorizationService.class), mock(AuditEventPublisher.class), new ObjectMapper(), properties
         );
 
         String optionsJson = "{\"workspaceId\":\"" + workspaceId + "\",\"title\":\"Imported SVG\",\"metadata\":{\"source\":\"smoke\"}}";
@@ -116,7 +127,7 @@ class ImportExportApplicationTests {
 
         ImportExportController controller = new ImportExportController(
             fileValidator, formatTransformer, mock(CanvasLookupService.class), mock(JobService.class),
-            mock(ArtifactService.class), mock(ImportExportAuthorizationService.class), new ObjectMapper(), properties
+            mock(ArtifactService.class), mock(ImportExportAuthorizationService.class), mock(AuditEventPublisher.class), new ObjectMapper(), properties
         );
 
         ObjectMapper mapper = new ObjectMapper();
@@ -144,6 +155,37 @@ class ImportExportApplicationTests {
     }
 
     @Test
+    void exportCanvasSyncPublishesAuditEvent() throws Exception {
+        UUID canvasId = UUID.randomUUID();
+        UUID workspaceId = UUID.randomUUID();
+        CanvasLookupService canvasLookupService = mock(CanvasLookupService.class);
+        AuditEventPublisher auditEventPublisher = mock(AuditEventPublisher.class);
+        when(canvasLookupService.load(canvasId, "test-user")).thenReturn(Map.of(
+            "id", canvasId.toString(),
+            "workspaceId", workspaceId.toString(),
+            "title", "Diagram",
+            "elements", List.of()
+        ));
+
+        ImportExportController controller = new ImportExportController(
+            fileValidator, formatTransformer, canvasLookupService, mock(JobService.class),
+            mock(ArtifactService.class), mock(ImportExportAuthorizationService.class), auditEventPublisher, new ObjectMapper(), properties
+        );
+
+        ResponseEntity<?> response = controller.exportCanvas(canvasId, "json", "test-user");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        verify(auditEventPublisher).publishCanvasExport(
+            eq(workspaceId),
+            eq(canvasId),
+            eq("test-user"),
+            argThat(metadata -> "sync".equals(metadata.get("mode"))
+                && "json".equals(metadata.get("format"))
+                && ((Number) metadata.get("bytes")).intValue() > 0)
+        );
+    }
+
+    @Test
     void exportJobDownloadRequiresOwnerOrWorkspacePermission() {
         UUID jobId = UUID.randomUUID();
         UUID workspaceId = UUID.randomUUID();
@@ -168,7 +210,7 @@ class ImportExportApplicationTests {
 
         ImportExportController controller = new ImportExportController(
             fileValidator, formatTransformer, mock(CanvasLookupService.class), jobService,
-            artifactService, authorizationService, new ObjectMapper(), properties
+            artifactService, authorizationService, mock(AuditEventPublisher.class), new ObjectMapper(), properties
         );
 
         assertThatThrownBy(() -> controller.downloadExportJob(jobId, "other-subject"))
@@ -209,7 +251,7 @@ class ImportExportApplicationTests {
 
         ImportExportController controller = new ImportExportController(
             fileValidator, formatTransformer, mock(CanvasLookupService.class), mock(JobService.class),
-            mock(ArtifactService.class), mock(ImportExportAuthorizationService.class), new ObjectMapper(), properties
+            mock(ArtifactService.class), mock(ImportExportAuthorizationService.class), mock(AuditEventPublisher.class), new ObjectMapper(), properties
         );
 
         ObjectMapper mapper = new ObjectMapper();

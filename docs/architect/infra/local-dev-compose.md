@@ -5,6 +5,7 @@ LiveLattice local development runs through Docker Compose. Developers should not
 ## Files
 
 - `compose.yaml` starts core infrastructure, the API Gateway, and backend placeholder containers.
+- `frontend/` is included as an optional static nginx service when the frontend build is ready.
 - `compose.observability.yaml` starts OpenTelemetry Collector, Prometheus, Grafana, Loki, and Tempo.
 - `compose.test.yaml` starts lightweight dependencies on offset ports for integration tests.
 - `.env.example` documents local environment variables.
@@ -19,6 +20,10 @@ The placeholders are replaced service by service as implementation progresses. T
 ## API Gateway
 
 The gateway exposes `/health`, `/ready`, and `/metrics`, forwards `/api/:service/*` traffic to backend services, adds `x-request-id`, applies fixed-window rate limiting, and supports optional JWT validation through JWKS.
+
+## Frontend
+
+The frontend Compose service builds `./frontend`, serves static assets through nginx, and proxies `/auth/*`, `/api/*`, and `/ready` to the Gateway so browser REST calls stay same-origin. It exposes `FRONTEND_PORT` with a default of `8088` and accepts `FRONTEND_REALTIME_URL` as the browser-visible realtime base URL.
 
 ## Performance defaults
 
@@ -35,9 +40,10 @@ cp .env.example .env
 docker compose config
 docker compose up -d
 docker compose ps
+docker compose build frontend
+docker compose up -d frontend gateway
 docker compose exec gateway wget -qO- 127.0.0.1:3000/health
 docker compose exec gateway wget -qO- 127.0.0.1:3000/api/core/health
 docker compose -f compose.observability.yaml up -d
 docker compose -f compose.test.yaml up -d
 ```
-

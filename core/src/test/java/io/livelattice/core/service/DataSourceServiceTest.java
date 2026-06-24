@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+import io.livelattice.core.event.EventPublisher;
 import io.livelattice.core.model.dto.CreateDataSourceRequest;
 import io.livelattice.core.model.dto.DataSourceResponse;
 import io.livelattice.core.model.dto.UpdateDataSourceRequest;
@@ -35,6 +36,8 @@ class DataSourceServiceTest {
     private ConfigEncryptionService encryptionService;
     @Mock
     private ClickHouseDataSourceFactory clickHouseDataSourceFactory;
+    @Mock
+    private EventPublisher eventPublisher;
 
     private DataSourceService dataSourceService;
     private final String userId = UUID.randomUUID().toString();
@@ -46,7 +49,7 @@ class DataSourceServiceTest {
         lenient().when(encryptionService.decrypt(anyString())).thenAnswer(i -> ((String) i.getArgument(0)).substring(4));
         dataSourceService = new DataSourceService(
             dataSourceRepository, userRepository, permissionService,
-            encryptionService, clickHouseDataSourceFactory
+            encryptionService, clickHouseDataSourceFactory, eventPublisher
         );
     }
 

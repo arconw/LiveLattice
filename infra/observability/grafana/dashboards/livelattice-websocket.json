@@ -1,0 +1,30 @@
+{
+  "title": "LiveLattice WebSocket",
+  "schemaVersion": 42,
+  "version": 1,
+  "refresh": "10s",
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Active connections",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        { "expr": "active_ws_connections", "legendFormat": "{{service}}" },
+        { "expr": "ws_connections_active", "legendFormat": "{{service}} alternate" }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Messages and canvas ops",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        { "expr": "rate(ws_messages_total[5m])", "legendFormat": "{{service}} messages" },
+        { "expr": "rate(canvas_ops_total[5m])", "legendFormat": "{{service}} canvas ops" }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 }
+    }
+  ]
+}
