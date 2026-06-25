@@ -27,7 +27,7 @@ services:
     volumes:
       - ./infra/observability/prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
       - ./infra/observability/prometheus-rules.yaml:/etc/prometheus/rules/livelattice.yaml:ro
-      - prometheus_data:/prometheus
+      - ./.docker-data/prometheus:/prometheus
     ports:
       - "${PROMETHEUS_PORT:-9090}:9090"
     depends_on:
@@ -48,7 +48,7 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
-      - grafana_data:/var/lib/grafana
+      - ./.docker-data/grafana:/var/lib/grafana
       - ./infra/observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./infra/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
@@ -100,7 +100,7 @@ services:
     command: ["-config.file=/etc/tempo.yaml"]
     volumes:
       - ./infra/observability/tempo.yaml:/etc/tempo.yaml:ro
-      - tempo_data:/tmp/tempo
+      - ./.docker-data/tempo:/tmp/tempo
     ports:
       - "${TEMPO_PORT:-3200}:3200"
     healthcheck:
@@ -125,11 +125,6 @@ services:
       retries: 12
     networks:
       - livelattice
-
-volumes:
-  prometheus_data:
-  grafana_data:
-  tempo_data:
 
 networks:
   livelattice:

@@ -38,6 +38,12 @@ public class Comment {
     @Column(name = "target_element_id")
     private String targetElementId;
 
+    @Column(name = "position_x")
+    private Double positionX;
+
+    @Column(name = "position_y")
+    private Double positionY;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -132,6 +138,22 @@ public class Comment {
 
     public void setTargetElementId(String targetElementId) {
         this.targetElementId = targetElementId;
+    }
+
+    public Double getPositionX() {
+        return positionX;
+    }
+
+    public void setPositionX(Double positionX) {
+        this.positionX = positionX;
+    }
+
+    public Double getPositionY() {
+        return positionY;
+    }
+
+    public void setPositionY(Double positionY) {
+        this.positionY = positionY;
     }
 
     public Instant getCreatedAt() {

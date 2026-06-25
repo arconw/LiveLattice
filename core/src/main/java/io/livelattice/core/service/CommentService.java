@@ -7,6 +7,7 @@ import io.livelattice.core.exception.BadRequestException;
 import io.livelattice.core.exception.ForbiddenException;
 import io.livelattice.core.exception.NotFoundException;
 import io.livelattice.core.model.dto.CommentResponse;
+import io.livelattice.core.model.dto.CommentPosition;
 import io.livelattice.core.model.dto.CreateCommentRequest;
 import io.livelattice.core.model.dto.UpdateCommentRequest;
 import io.livelattice.core.model.entity.Canvas;
@@ -93,6 +94,7 @@ public class CommentService {
             request.content(),
             request.targetElementId()
         );
+        applyPosition(comment, request.position());
         comment = commentRepository.save(comment);
 
         eventPublisher.publish(new CommentAdded(comment.getId(), canvas.getId(), user.getId()));
@@ -151,6 +153,7 @@ public class CommentService {
                 comment.setResolvedAt(null);
             }
         }
+        applyPosition(comment, request.position());
         comment.setUpdatedAt(Instant.now());
         comment = commentRepository.save(comment);
         return CommentResponse.from(comment);
@@ -175,5 +178,16 @@ public class CommentService {
         comment.setUpdatedAt(Instant.now());
         commentRepository.save(comment);
         eventPublisher.publish(new CommentDeleted(comment.getId(), canvas.getId(), canvas.getWorkspaceId(), user.getId()));
+    }
+
+    private void applyPosition(Comment comment, CommentPosition position) {
+        if (position == null) {
+            return;
+        }
+        if (position.x() == null || position.y() == null || !Double.isFinite(position.x()) || !Double.isFinite(position.y())) {
+            throw new BadRequestException("Invalid comment position");
+        }
+        comment.setPositionX(position.x());
+        comment.setPositionY(position.y());
     }
 }

@@ -10,6 +10,7 @@ import io.livelattice.core.event.EventPublisher;
 import io.livelattice.core.exception.ForbiddenException;
 import io.livelattice.core.exception.NotFoundException;
 import io.livelattice.core.model.dto.CommentResponse;
+import io.livelattice.core.model.dto.CommentPosition;
 import io.livelattice.core.model.dto.CreateCommentRequest;
 import io.livelattice.core.model.dto.UpdateCommentRequest;
 import io.livelattice.core.model.entity.Canvas;
@@ -71,10 +72,11 @@ class CommentServiceTest {
         doNothing().when(permissionService).requirePermission(workspaceId, user.getId().toString(), "canvas:edit");
         when(commentRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
-        CommentResponse response = commentService.create(canvasId, new CreateCommentRequest("Nice", null, "el-1"), userId);
+        CommentResponse response = commentService.create(canvasId, new CreateCommentRequest("Nice", null, "el-1", new CommentPosition(320.0, 180.0)), userId);
 
         assertEquals("Nice", response.content());
         assertEquals("el-1", response.targetElementId());
+        assertEquals(new CommentPosition(320.0, 180.0), response.position());
         assertFalse(response.resolved());
         verify(eventPublisher).publish(any(CommentAdded.class));
     }
@@ -90,7 +92,7 @@ class CommentServiceTest {
         when(commentRepository.findByIdAndDeletedAtIsNull(any())).thenReturn(Optional.empty());
 
         assertThrows(NotFoundException.class, () ->
-            commentService.create(canvasId, new CreateCommentRequest("Reply", UUID.randomUUID().toString(), null), userId));
+            commentService.create(canvasId, new CreateCommentRequest("Reply", UUID.randomUUID().toString(), null, null), userId));
     }
 
     @Test
@@ -124,9 +126,10 @@ class CommentServiceTest {
         when(commentRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
         CommentResponse response = commentService.update(canvasId, comment.getId().toString(),
-            new UpdateCommentRequest("New", true), userId);
+            new UpdateCommentRequest("New", true, new CommentPosition(440.0, 220.0)), userId);
 
         assertEquals("New", response.content());
+        assertEquals(new CommentPosition(440.0, 220.0), response.position());
         assertTrue(response.resolved());
         assertNotNull(response.resolvedAt());
     }
@@ -144,7 +147,7 @@ class CommentServiceTest {
         when(commentRepository.findByIdAndDeletedAtIsNull(comment.getId())).thenReturn(Optional.of(comment));
 
         assertThrows(ForbiddenException.class, () ->
-            commentService.update(canvasId, comment.getId().toString(), new UpdateCommentRequest("New", null), userId));
+            commentService.update(canvasId, comment.getId().toString(), new UpdateCommentRequest("New", null, null), userId));
     }
 
     @Test

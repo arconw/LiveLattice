@@ -25,7 +25,7 @@ services:
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ./.docker-data/postgres:/var/lib/postgresql/data
       - ./migrations/init:/docker-entrypoint-initdb.d:ro
     shm_size: 256mb
     healthcheck:
@@ -42,7 +42,7 @@ services:
     ports:
       - "${REDIS_PORT:-6379}:6379"
     volumes:
-      - redis_data:/data
+      - ./.docker-data/redis:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -70,7 +70,7 @@ services:
     ports:
       - "${KAFKA_PORT:-9092}:9092"
     volumes:
-      - kafka_data:/var/lib/kafka/data
+      - ./.docker-data/kafka:/var/lib/kafka/data
     healthcheck:
       test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
       interval: 15s
@@ -90,7 +90,7 @@ services:
       - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"
       - "${CLICKHOUSE_NATIVE_PORT:-9000}:9000"
     volumes:
-      - clickhouse_data:/var/lib/clickhouse
+      - ./.docker-data/clickhouse:/var/lib/clickhouse
       - ./migrations/clickhouse:/docker-entrypoint-initdb.d:ro
     ulimits:
       nofile:
@@ -114,7 +114,7 @@ services:
       - "${OPENSEARCH_PORT:-9200}:9200"
       - "${OPENSEARCH_PERF_PORT:-9600}:9600"
     volumes:
-      - opensearch_data:/usr/share/opensearch/data
+      - ./.docker-data/opensearch:/usr/share/opensearch/data
     ulimits:
       nofile:
         soft: 65536
@@ -138,7 +138,7 @@ services:
       - "${MINIO_API_PORT:-9100}:9000"
       - "${MINIO_CONSOLE_PORT:-9101}:9001"
     volumes:
-      - minio_data:/data
+      - ./.docker-data/minio:/data
     healthcheck:
       test: ["CMD-SHELL", "curl -fs http://localhost:9000/minio/health/live >/dev/null"]
       interval: 10s
@@ -251,6 +251,7 @@ services:
   realtime:
     build:
       context: ./realtime
+    restart: unless-stopped
     environment:
       <<: *otel-env
       OTEL_SERVICE_NAME: realtime
@@ -370,7 +371,7 @@ services:
       - "${MAILPIT_SMTP_PORT:-1025}:1025"
       - "${MAILPIT_UI_PORT:-8025}:8025"
     volumes:
-      - mailpit_data:/data
+      - ./.docker-data/mailpit:/data
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8025/api/v1/messages >/dev/null 2>&1"]
       interval: 10s
@@ -554,15 +555,6 @@ services:
       start_period: 60s
     networks:
       - livelattice
-
-volumes:
-  postgres_data:
-  redis_data:
-  kafka_data:
-  clickhouse_data:
-  opensearch_data:
-  minio_data:
-  mailpit_data:
 
 networks:
   livelattice:

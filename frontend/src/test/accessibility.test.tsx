@@ -20,7 +20,7 @@ import {
   workspaceFixtures,
   workspaceMemberFixtures
 } from "../contracts/fixtures";
-import { coreFixtureIds, primaryCanvasHref } from "../contracts/fixture-ids";
+import { canvasListHref, coreFixtureIds, primaryCanvasHref } from "../contracts/fixture-ids";
 import type { AuthTokenResponse } from "../contracts/auth";
 import { dashboardDataFixture, dashboardFixtures, dashboardWidgetFixtures, dataSourceFixtures } from "../contracts/quality-fixtures";
 import type { CanvasContent } from "../contracts/canvas";
@@ -41,6 +41,7 @@ beforeEach(() => {
 });
 
 const canvasRoute = primaryCanvasHref("factory-floor");
+const canvasListRoute = canvasListHref("factory-floor");
 const dashboardRoute = `/w/factory-floor/d/${coreFixtureIds.dashboardOperations}`;
 const canvasApiPath = `/api/core/canvases/${coreFixtureIds.canvasIncidentMap}`;
 const dashboardApiPath = `/api/core/dashboards/${coreFixtureIds.dashboardOperations}`;
@@ -64,6 +65,7 @@ describe("frontend accessibility gate", () => {
 
   it.each([
     ["/w/factory-floor", /workspace cockpit/i],
+    [canvasListRoute, /canvas workbench/i],
     [canvasRoute, /incident response lattice/i],
     ["/w/factory-floor/d", /analytics dashboards/i],
     [dashboardRoute, /operations board/i],
@@ -107,9 +109,14 @@ describe("frontend accessibility gate", () => {
 
     expect(await screen.findByRole("heading", { name: /workspace cockpit/i })).toBeInTheDocument();
     const canvasLink = screen.getByRole("link", { name: /^canvas$/i });
-    expect(canvasLink).toHaveAttribute("href", canvasRoute);
+    expect(canvasLink).toHaveAttribute("href", canvasListRoute);
 
     canvasLink.focus();
+    await user.keyboard("{Enter}");
+
+    expect(await screen.findByRole("heading", { name: /canvas workbench/i })).toBeInTheDocument();
+    const openLatestCanvas = screen.getByRole("link", { name: /open latest canvas/i });
+    openLatestCanvas.focus();
     await user.keyboard("{Enter}");
 
     expect(await screen.findByRole("heading", { name: /incident response lattice/i })).toBeInTheDocument();
@@ -145,6 +152,19 @@ describe("frontend accessibility gate", () => {
     rectangleTool.focus();
     await user.keyboard("{Enter}");
     await screen.findByText(/version 129/i);
+  });
+
+  it("exposes comment pin previews to keyboard and assistive technology", async () => {
+    renderApp(canvasRoute);
+
+    expect(await screen.findByRole("heading", { name: /incident response lattice/i })).toBeInTheDocument();
+    const commentPin = screen.getByRole("button", { name: /open comment on general canvas: open. snapshot before changing the database branch/i });
+
+    commentPin.focus();
+
+    expect(commentPin).toHaveFocus();
+    expect(commentPin).toHaveAccessibleDescription(/Snapshot before changing the database branch/i);
+    expect(within(commentPin).getByRole("tooltip")).toHaveTextContent(/General canvas/i);
   });
 
   it("traps and restores focus for dialogs opened from the canvas snapshot flow", async () => {
@@ -251,6 +271,10 @@ function gatewayFetch({ workspaces = workspaceFixtures as WorkspaceResponse[], m
           "background-jobs": { status: "DOWN", details: {} }
         }
       });
+    }
+
+    if (path.startsWith("/api/core/canvases?")) {
+      return jsonResponse([canvasFixture]);
     }
 
     if (path === canvasApiPath && init?.method === "PATCH") {

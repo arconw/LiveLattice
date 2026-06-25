@@ -13,6 +13,7 @@ public record CommentResponse(
     String resolvedBy,
     Instant resolvedAt,
     String targetElementId,
+    CommentPosition position,
     Instant createdAt,
     Instant updatedAt
 ) {
@@ -27,6 +28,7 @@ public record CommentResponse(
             comment.getResolvedBy() != null ? comment.getResolvedBy().toString() : null,
             comment.getResolvedAt(),
             comment.getTargetElementId(),
+            comment.getPositionX() != null && comment.getPositionY() != null ? new CommentPosition(comment.getPositionX(), comment.getPositionY()) : null,
             comment.getCreatedAt(),
             comment.getUpdatedAt()
         );

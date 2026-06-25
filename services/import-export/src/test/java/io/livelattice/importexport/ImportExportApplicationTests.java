@@ -19,6 +19,7 @@ import io.livelattice.importexport.controller.ImportExportController;
 import io.livelattice.importexport.dto.ImportOptions;
 import io.livelattice.importexport.dto.ImportResponse;
 import io.livelattice.importexport.exception.ForbiddenException;
+import io.livelattice.importexport.exception.GlobalExceptionHandler;
 import io.livelattice.importexport.exception.UnsupportedFormatException;
 import io.livelattice.importexport.exception.ValidationException;
 import io.livelattice.importexport.model.JobState;
@@ -32,6 +33,7 @@ import io.livelattice.importexport.service.ImportExportAuthorizationService;
 import io.livelattice.importexport.service.JobService;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -42,6 +44,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 
 class ImportExportApplicationTests {
 
@@ -155,6 +158,73 @@ class ImportExportApplicationTests {
     }
 
     @Test
+    void exportCanvasSvgPreservesCanvasStylesAndContent() throws Exception {
+        Map<String, Object> rectangle = new LinkedHashMap<>();
+        rectangle.put("id", "el-gateway");
+        rectangle.put("type", "rectangle");
+        rectangle.put("x", 160);
+        rectangle.put("y", 140);
+        rectangle.put("width", 210);
+        rectangle.put("height", 104);
+        rectangle.put("rotation", 0);
+        rectangle.put("style", Map.of("fill", "#ffffff", "stroke", "#4d7cfe", "strokeWidth", 2, "opacity", 1));
+        rectangle.put("data", Map.of("text", "REST Gateway"));
+        rectangle.put("zIndex", 1);
+
+        Map<String, Object> arrow = new LinkedHashMap<>();
+        arrow.put("id", "el-arrow");
+        arrow.put("type", "arrow");
+        arrow.put("x", 610);
+        arrow.put("y", 220);
+        arrow.put("width", 132);
+        arrow.put("height", 96);
+        arrow.put("style", Map.of("fill", "transparent", "stroke", "#273142", "strokeWidth", 3, "opacity", 1));
+        arrow.put("data", Map.of("start", Map.of("x", 610, "y", 220), "end", Map.of("x", 740, "y", 316)));
+        arrow.put("zIndex", 2);
+
+        Map<String, Object> freehand = new LinkedHashMap<>();
+        freehand.put("id", "el-freehand");
+        freehand.put("type", "freehand");
+        freehand.put("style", Map.of("fill", "transparent", "stroke", "#ff5f8f", "strokeWidth", 4, "opacity", 1));
+        freehand.put("data", Map.of("points", List.of(Map.of("x", 540, "y", 470), Map.of("x", 584, "y", 430), Map.of("x", 650, "y", 504))));
+        freehand.put("zIndex", 3);
+
+        Map<String, Object> curve = new LinkedHashMap<>();
+        curve.put("id", "el-curve");
+        curve.put("type", "curve");
+        curve.put("x", 210);
+        curve.put("y", 300);
+        curve.put("width", 260);
+        curve.put("height", 118);
+        curve.put("style", Map.of("fill", "transparent", "stroke", "#8b95a7", "strokeWidth", 2, "opacity", 1));
+        curve.put("data", Map.of(
+            "start", Map.of("x", 210, "y", 370),
+            "controlStart", Map.of("x", 284, "y", 300),
+            "controlEnd", Map.of("x", 392, "y", 418),
+            "end", Map.of("x", 470, "y", 342)
+        ));
+        curve.put("zIndex", 4);
+
+        Map<String, Object> canvas = new LinkedHashMap<>();
+        canvas.put("metadata", Map.of("width", 1000, "height", 700, "backgroundColor", "#eef2f5", "gridEnabled", true));
+        canvas.put("elements", List.of(rectangle, arrow, freehand, curve));
+
+        String svg = new String(formatTransformer.exportCanvasToSvg(canvas), StandardCharsets.UTF_8);
+
+        assertThat(svg)
+            .contains("#eef2f5")
+            .contains("viewBox=\"102 103.6 696 436.8\"")
+            .doesNotContain("viewBox=\"0 0 1000 700\"")
+            .contains("#4d7cfe")
+            .contains("REST Gateway")
+            .contains("marker-end=\"url(#canvas-arrow-head)\"")
+            .contains("polyline")
+            .contains("stroke-dasharray=\"7 8\"")
+            .contains("M 210 370 C 284 300 392 418 470 342")
+            .contains("#ff5f8f");
+    }
+
+    @Test
     void exportCanvasSyncPublishesAuditEvent() throws Exception {
         UUID canvasId = UUID.randomUUID();
         UUID workspaceId = UUID.randomUUID();
@@ -183,6 +253,38 @@ class ImportExportApplicationTests {
                 && "json".equals(metadata.get("format"))
                 && ((Number) metadata.get("bytes")).intValue() > 0)
         );
+    }
+
+    @Test
+    void exportJobsListMapsFrontendFilters() {
+        UUID jobId = UUID.randomUUID();
+        UUID workspaceId = UUID.randomUUID();
+        Instant now = Instant.now();
+        JobService jobService = mock(JobService.class);
+        JobState state = new JobState(jobId, "export", workspaceId, "test-user", JobStatus.COMPLETED, 100, "exports/canvas.svg", null, now, now);
+        when(jobService.listJobs("export", "EXPORT", JobStatus.COMPLETED, workspaceId, 0, 20, "test-user")).thenReturn(List.of(state));
+        when(jobService.countJobs("export", "EXPORT", JobStatus.COMPLETED, workspaceId, "test-user")).thenReturn(1L);
+
+        ImportExportController controller = new ImportExportController(
+            fileValidator, formatTransformer, mock(CanvasLookupService.class), jobService,
+            mock(ArtifactService.class), mock(ImportExportAuthorizationService.class), mock(AuditEventPublisher.class), new ObjectMapper(), properties
+        );
+
+        ResponseEntity<Map<String, Object>> response = controller.listExportJobs(workspaceId.toString(), null, "succeeded", "EXPORT", 0, 20, "test-user");
+        List<?> jobs = (List<?>) response.getBody().get("jobs");
+        Map<?, ?> job = (Map<?, ?>) jobs.get(0);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).containsEntry("total", 1L);
+        assertThat(job.get("jobId")).isEqualTo(jobId.toString());
+        assertThat(job.get("status")).isEqualTo("succeeded");
+        assertThat(job.get("workspaceId")).isEqualTo(workspaceId.toString());
+    }
+
+    @Test
+    void methodNotSupportedReturns405InsteadOf500() {
+        ResponseEntity<?> response = new GlobalExceptionHandler().handleMethodNotSupported(new HttpRequestMethodNotSupportedException("GET"));
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.METHOD_NOT_ALLOWED);
     }
 
     @Test

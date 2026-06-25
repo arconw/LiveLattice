@@ -198,6 +198,7 @@ public class CanvasService {
 
         try {
             canvas = canvasRepository.save(canvas);
+            canvasRepository.flush();
         } catch (ObjectOptimisticLockingFailureException ex) {
             throw new OptimisticLockException("Canvas was modified concurrently");
         }
@@ -207,6 +208,7 @@ public class CanvasService {
             canvas.setSnapshotVersion(canvas.getVersion());
             canvas.setOperationCountSinceSnapshot(0);
             canvas = canvasRepository.save(canvas);
+            canvasRepository.flush();
         }
 
         eventPublisher.publish(new CanvasUpdated(canvas.getId(), canvas.getWorkspaceId(), internalUserId, canvas.getVersion()));

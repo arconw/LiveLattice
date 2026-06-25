@@ -11,12 +11,15 @@ export class OpPersistenceService {
   private buffer: BroadcastOp[] = [];
   private flushTimer: ReturnType<typeof setInterval> | undefined;
   private readonly producer?: KafkaProducerAdapter;
+  private readonly maxBufferedOps: number;
+  private flushing = false;
 
   constructor(
     private readonly config: KafkaConfig,
     producer?: KafkaProducerAdapter
   ) {
     this.producer = producer;
+    this.maxBufferedOps = Math.max(config.flushBatchSize * 10, config.flushBatchSize, 1);
   }
 
   start(onFlush?: (count: number) => void): void {
@@ -24,7 +27,9 @@ export class OpPersistenceService {
       return;
     }
     this.flushTimer = setInterval(() => {
-      void this.flush(onFlush);
+      void this.flush(onFlush).catch((error) => {
+        console.error("Failed to flush realtime ops", error);
+      });
     }, this.config.flushIntervalMs);
     if (typeof this.flushTimer?.unref === "function") {
       this.flushTimer.unref();
@@ -32,12 +37,14 @@ export class OpPersistenceService {
   }
 
   async push(op: BroadcastOp): Promise<void> {
-    if (!this.config.enabled) {
+    if (!this.config.enabled || !this.producer) {
       return;
     }
     this.buffer.push(op);
     if (this.buffer.length >= this.config.flushBatchSize) {
-      await this.flush();
+      await this.flush().catch((error) => {
+        console.error("Failed to flush realtime ops", error);
+      });
     }
   }
 
@@ -47,32 +54,43 @@ export class OpPersistenceService {
       this.buffer = [];
       return count;
     }
+    if (this.flushing) {
+      return 0;
+    }
+    this.flushing = true;
     const batch = this.buffer;
     this.buffer = [];
-    const byCanvas = new Map<string, BroadcastOp[]>();
-    for (const op of batch) {
-      const list = byCanvas.get(op.canvasId);
-      if (list) {
-        list.push(op);
-      } else {
-        byCanvas.set(op.canvasId, [op]);
+    try {
+      const byCanvas = new Map<string, BroadcastOp[]>();
+      for (const op of batch) {
+        const list = byCanvas.get(op.canvasId);
+        if (list) {
+          list.push(op);
+        } else {
+          byCanvas.set(op.canvasId, [op]);
+        }
       }
+      for (const [canvasId, ops] of byCanvas) {
+        await this.producer.send({
+          topic: this.config.canvasOpsTopic,
+          messages: [
+            {
+              key: canvasId,
+              value: JSON.stringify({ canvasId, ops })
+            }
+          ]
+        });
+      }
+      if (onFlush) {
+        onFlush(batch.length);
+      }
+      return batch.length;
+    } catch (error) {
+      this.buffer = [...batch, ...this.buffer].slice(-this.maxBufferedOps);
+      throw error;
+    } finally {
+      this.flushing = false;
     }
-    for (const [canvasId, ops] of byCanvas) {
-      await this.producer.send({
-        topic: this.config.canvasOpsTopic,
-        messages: [
-          {
-            key: canvasId,
-            value: JSON.stringify({ canvasId, ops })
-          }
-        ]
-      });
-    }
-    if (onFlush) {
-      onFlush(batch.length);
-    }
-    return batch.length;
   }
 
   async close(): Promise<void> {
@@ -80,7 +98,9 @@ export class OpPersistenceService {
       clearInterval(this.flushTimer);
       this.flushTimer = undefined;
     }
-    await this.flush();
+    await this.flush().catch((error) => {
+      console.error("Failed to flush realtime ops during shutdown", error);
+    });
     if (this.producer) {
       await this.producer.close();
     }

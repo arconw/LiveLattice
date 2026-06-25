@@ -7,7 +7,10 @@ import io.livelattice.importexport.exception.ForbiddenException;
 import io.livelattice.importexport.model.JobState;
 import io.livelattice.importexport.model.JobStatus;
 import java.time.Instant;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -71,6 +74,45 @@ public class JobService {
 
     public JobState find(UUID jobId) {
         String value = redisTemplate.opsForValue().get(key(jobId));
+        return readState(value);
+    }
+
+    public List<JobState> listJobs(String domain, String type, JobStatus status, UUID workspaceId, int page, int size, String userSubject) {
+        Set<String> keys = redisTemplate.keys(keyPrefix() + "*");
+        if (keys == null || keys.isEmpty()) {
+            return List.of();
+        }
+        long offset = (long) Math.max(0, page) * Math.max(1, size);
+        long limit = Math.max(1, Math.min(size, 100));
+        return keys.stream()
+            .map(key -> readState(redisTemplate.opsForValue().get(key)))
+            .filter(state -> state != null && matchesDomain(state, domain))
+            .filter(state -> type == null || type.isBlank() || state.type().toLowerCase().contains(type.toLowerCase()))
+            .filter(state -> status == null || state.status() == status)
+            .filter(state -> workspaceId == null || workspaceId.equals(state.workspaceId()))
+            .filter(state -> canRead(state, userSubject))
+            .sorted(Comparator.comparing(JobState::createdAt, Comparator.nullsLast(Comparator.naturalOrder())).reversed())
+            .skip(offset)
+            .limit(limit)
+            .toList();
+    }
+
+    public long countJobs(String domain, String type, JobStatus status, UUID workspaceId, String userSubject) {
+        Set<String> keys = redisTemplate.keys(keyPrefix() + "*");
+        if (keys == null || keys.isEmpty()) {
+            return 0;
+        }
+        return keys.stream()
+            .map(key -> readState(redisTemplate.opsForValue().get(key)))
+            .filter(state -> state != null && matchesDomain(state, domain))
+            .filter(state -> type == null || type.isBlank() || state.type().toLowerCase().contains(type.toLowerCase()))
+            .filter(state -> status == null || state.status() == status)
+            .filter(state -> workspaceId == null || workspaceId.equals(state.workspaceId()))
+            .filter(state -> canRead(state, userSubject))
+            .count();
+    }
+
+    private JobState readState(String value) {
         if (value == null) {
             return null;
         }
@@ -141,6 +183,34 @@ public class JobService {
     }
 
     private String key(UUID jobId) {
-        return "import-export:job:" + jobId;
+        return keyPrefix() + jobId;
+    }
+
+    private String keyPrefix() {
+        return "import-export:job:";
+    }
+
+    private boolean matchesDomain(JobState state, String domain) {
+        if (domain == null || domain.isBlank()) {
+            return true;
+        }
+        String normalizedDomain = domain.toLowerCase();
+        String normalizedType = state.type() == null ? "" : state.type().toLowerCase();
+        return normalizedType.contains(normalizedDomain);
+    }
+
+    private boolean canRead(JobState state, String userSubject) {
+        if (state.userSubject() != null && state.userSubject().equals(userSubject)) {
+            return true;
+        }
+        if (state.workspaceId() == null) {
+            return false;
+        }
+        try {
+            authorizationService.requirePermission(state.workspaceId(), userSubject, "workspace:read");
+            return true;
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 }

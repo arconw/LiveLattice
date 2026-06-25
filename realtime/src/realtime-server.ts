@@ -241,8 +241,12 @@ async function handleCanvasOp(
     seq: broadcast.seq,
     origin: broadcast.origin
   });
-  await deps.broadcast.publishOp(broadcast);
-  await deps.ops.push(broadcast);
+  await deps.broadcast.publishOp(broadcast).catch((error) => {
+    console.error("Failed to publish realtime operation", error);
+  });
+  await deps.ops.push(broadcast).catch((error) => {
+    console.error("Failed to persist realtime operation", error);
+  });
 }
 
 async function handlePresenceUpdate(

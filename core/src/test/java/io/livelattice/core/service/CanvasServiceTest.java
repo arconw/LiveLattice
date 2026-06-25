@@ -149,6 +149,7 @@ class CanvasServiceTest {
         assertEquals("New", response.title());
         assertEquals(2, response.version());
         assertEquals(1, response.operationCountSinceSnapshot());
+        verify(canvasRepository).flush();
         verify(eventPublisher).publish(any(CanvasUpdated.class));
     }
 

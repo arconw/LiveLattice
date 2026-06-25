@@ -34,6 +34,10 @@ export function primaryCanvasHref(workspaceSlug: string) {
   return `/w/${workspaceSlug}/c/${coreFixtureIds.canvasIncidentMap}`;
 }
 
+export function canvasListHref(workspaceSlug: string) {
+  return `/w/${workspaceSlug}/c`;
+}
+
 export function exportBoundaryCommentHref(workspaceSlug: string) {
   return `${primaryCanvasHref(workspaceSlug)}?comment=${coreFixtureIds.commentExportBoundary}`;
 }

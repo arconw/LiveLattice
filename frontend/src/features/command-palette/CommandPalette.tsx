@@ -1,8 +1,8 @@
-import { Bell, FileSearch, Import, LayoutDashboard, ListChecks, MessageCircle, Network, Search, ShieldCheck, UserRound } from "lucide-react";
+import { Bell, FileSearch, Import, LayoutDashboard, ListChecks, Network, Search, ShieldCheck, UserRound } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, MutableRefObject } from "react";
 import { useNavigate } from "react-router-dom";
-import { exportBoundaryCommentHref, primaryCanvasHref } from "../../contracts/fixture-ids";
+import { canvasListHref } from "../../contracts/fixture-ids";
 import { Input } from "../../design-system/components";
 
 export type CommandPaletteProps = {
@@ -20,14 +20,13 @@ export function CommandPalette({ open, workspaceSlug, onClose, returnFocusRef }:
   const [activeIndex, setActiveIndex] = useState(0);
   const commands = useMemo(
     () => {
-      const canvasHref = primaryCanvasHref(workspaceSlug);
+      const canvasHref = canvasListHref(workspaceSlug);
 
       return [
         { label: "Open workspace lattice", kind: "workspace", href: `/w/${workspaceSlug}`, icon: Network },
-        { label: "Open Warehouse flow", kind: "canvas", href: canvasHref, icon: ListChecks },
+        { label: "Open canvases", kind: "canvas", href: canvasHref, icon: ListChecks },
         { label: "Open dashboards", kind: "dashboard", href: `/w/${workspaceSlug}/d`, icon: LayoutDashboard },
         { label: "Search highlighted comments", kind: "search", href: `/w/${workspaceSlug}/search?q=diagram+RBAC+export`, icon: FileSearch },
-        { label: "Open export boundary comment", kind: "comment", href: exportBoundaryCommentHref(workspaceSlug), icon: MessageCircle },
         { label: "Review import and export jobs", kind: "jobs", href: `/w/${workspaceSlug}/jobs`, icon: Import },
         { label: "Open notification inbox", kind: "notifications", href: `/w/${workspaceSlug}/notifications`, icon: Bell },
         { label: "Find workspace people", kind: "people", href: `/w/${workspaceSlug}/search?type=user&q=owner`, icon: UserRound },

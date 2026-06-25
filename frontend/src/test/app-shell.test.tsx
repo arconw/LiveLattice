@@ -1,15 +1,24 @@
+import { readFileSync } from "node:fs";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AppRoutes } from "../app/routes";
-import { authSessionFixture, workspaceFixtures, workspaceMemberFixtures } from "../contracts/fixtures";
+import { authSessionFixture, canvasFixture, workspaceFixtures, workspaceMemberFixtures } from "../contracts/fixtures";
+import { coreFixtureIds } from "../contracts/fixture-ids";
 import type { AuthTokenResponse } from "../contracts/auth";
+import type { RawCanvasResponse } from "../contracts/canvas";
 import type { WorkspaceMemberResponse, WorkspaceResponse } from "../contracts/workspaces";
 import { AuthProvider } from "../features/auth/AuthProvider";
 import { WorkspaceProvider } from "../features/workspaces/WorkspaceProvider";
 
 type MemberFixtureMap = Record<string, WorkspaceMemberResponse[]>;
+type GatewayFetchOptions = {
+  workspaces?: WorkspaceResponse[];
+  members?: MemberFixtureMap;
+  createStatus?: number;
+  canvases?: RawCanvasResponse[];
+};
 
 function renderAuthenticatedApp(initialEntry = "/w/factory-floor", fetchMock = gatewayFetch()) {
   vi.stubGlobal("fetch", fetchMock);
@@ -40,7 +49,7 @@ function renderUnauthenticatedApp(initialEntry = "/w/factory-floor", fetchMock =
   );
 }
 
-function gatewayFetch({ workspaces = workspaceFixtures as WorkspaceResponse[], members = workspaceMemberFixtures as MemberFixtureMap, createStatus = 201 }: { workspaces?: WorkspaceResponse[]; members?: MemberFixtureMap; createStatus?: number } = {}) {
+function gatewayFetch({ workspaces = workspaceFixtures as WorkspaceResponse[], members = workspaceMemberFixtures as MemberFixtureMap, createStatus = 201, canvases = [canvasFixture] }: GatewayFetchOptions = {}) {
   return vi.fn<typeof fetch>(async (input, init) => {
     const path = String(input);
 
@@ -58,6 +67,10 @@ function gatewayFetch({ workspaces = workspaceFixtures as WorkspaceResponse[], m
 
     if (path === "/api/core/workspaces") {
       return jsonResponse(workspaces);
+    }
+
+    if (path.startsWith("/api/core/canvases?")) {
+      return jsonResponse(canvases);
     }
 
     const memberMatch = path.match(/^\/api\/core\/workspaces\/([^/]+)\/members$/);
@@ -82,6 +95,7 @@ function jsonResponse(body: unknown, status = 200) {
 describe("app shell auth and workspace flows", () => {
   beforeEach(() => {
     window.sessionStorage.clear();
+    window.localStorage.clear();
     vi.restoreAllMocks();
   });
 
@@ -100,6 +114,24 @@ describe("app shell auth and workspace flows", () => {
 
     expect(screen.queryByRole("textbox", { name: /command search/i })).not.toBeInTheDocument();
     expect(trigger).toHaveFocus();
+  });
+
+  it("toggles the primary sidebar between collapsed and expanded modes", async () => {
+    const user = userEvent.setup();
+    const { container } = renderAuthenticatedApp();
+    await screen.findByRole("heading", { name: /workspace cockpit/i });
+
+    const shell = container.querySelector(".app-shell");
+    const expandButton = screen.getByRole("button", { name: /expand primary navigation/i });
+
+    expect(shell).toHaveClass("is-sidebar-collapsed");
+    expect(expandButton).toHaveAttribute("aria-expanded", "false");
+
+    await user.click(expandButton);
+
+    expect(shell).toHaveClass("is-sidebar-open");
+    expect(screen.getByRole("button", { name: /collapse primary navigation/i })).toHaveAttribute("aria-expanded", "true");
+    expect(window.localStorage.getItem("livelattice:primary-sidebar")).toBe("open");
   });
 
   it("updates the lattice inspector when a node is selected", async () => {
@@ -168,6 +200,39 @@ describe("app shell auth and workspace flows", () => {
     await user.selectOptions(screen.getByLabelText(/workspace switcher/i), "platform-ops");
 
     await waitFor(() => expect(screen.getByTestId("cache-namespace")).toHaveTextContent("cache/platform-ops/1"));
+  });
+
+  it("opens the workspace canvas list from primary navigation without a fixture canvas id", async () => {
+    const user = userEvent.setup();
+    const fetchMock = gatewayFetch({ canvases: [] });
+    renderAuthenticatedApp("/w/factory-floor", fetchMock);
+    await screen.findByRole("heading", { name: /workspace cockpit/i });
+
+    await user.click(screen.getByRole("link", { name: /^canvas$/i }));
+
+    expect(await screen.findByRole("heading", { name: /canvas workbench/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /no canvases yet/i })).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes(coreFixtureIds.canvasIncidentMap))).toBe(false);
+  });
+
+  it("renders readable canvas list open actions on paper surfaces", async () => {
+    renderAuthenticatedApp("/w/factory-floor/c");
+
+    expect(await screen.findByRole("heading", { name: /canvas workbench/i })).toBeInTheDocument();
+
+    const latestAction = screen.getByRole("link", { name: /open latest canvas/i });
+    const canvasAction = screen.getByRole("link", { name: /^open canvas$/i });
+
+    expect(latestAction).toHaveClass("button", "button-primary");
+    expect(canvasAction).toHaveClass("button", "button-secondary");
+    expect(latestAction.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+    expect(canvasAction.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+
+    const styles = readFileSync("src/styles.css", "utf8");
+    expect(styles).toMatch(/\.canvas-feature-card \.button-primary,\n\.canvas-list-card \.button-secondary \{\n\s+color: var\(--color-blueprint-ink\);/);
+    expect(styles).toMatch(/\.canvas-list-card \.button-secondary \{\n\s+background: rgba\(77, 124, 254, 0\.12\);/);
+    expect(styles).toContain(".canvas-feature-card .button-primary:hover,\n.canvas-list-card .button-secondary:hover");
+    expect(styles).toContain(".canvas-list-card .button-secondary[aria-disabled=\"true\"]");
   });
 
   it("hides restricted navigation and disables restricted actions for viewers", async () => {

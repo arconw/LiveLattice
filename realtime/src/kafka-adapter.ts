@@ -57,6 +57,14 @@ export async function createProducer(config: KafkaConfig): Promise<KafkaProducer
     return undefined;
   }
   const producer = new KafkaJsProducer(config);
-  await producer.connect();
-  return producer;
+  try {
+    await producer.connect();
+    return producer;
+  } catch (error) {
+    console.error("Kafka producer unavailable; realtime op persistence disabled", error);
+    await producer.close().catch((closeError) => {
+      console.error("Kafka producer cleanup failed", closeError);
+    });
+    return undefined;
+  }
 }

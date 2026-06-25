@@ -14,11 +14,13 @@ import {
   Lock,
   Maximize2,
   MessageSquare,
+  Minimize2,
   MousePointer2,
-  Move,
   Pencil,
+  ScanSearch,
   Send,
   Square,
+  SquareDashedMousePointer,
   Trash2,
   Type,
   Unlock,
@@ -28,10 +30,10 @@ import {
   ZoomOut
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, ChangeEvent, FormEvent, KeyboardEvent, PointerEvent, ReactNode } from "react";
+import type { CSSProperties, ChangeEvent, FormEvent, KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { Link, useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { AppError, createWorkspaceCacheKey } from "../../contracts/api-client";
-import type { CanvasContent, CanvasElement, CanvasElementType, CanvasResponse, CommentResponse, SnapshotResponse, TemplateResponse } from "../../contracts/canvas";
+import type { CanvasContent, CanvasElement, CanvasElementType, CanvasPoint, CanvasResponse, CommentResponse, SnapshotResponse, TemplateResponse } from "../../contracts/canvas";
 import {
   createCanvas,
   createCanvasComment,
@@ -56,48 +58,72 @@ import { PermissionDeniedState, RouteAppErrorState } from "../workspaces/Workspa
 import {
   applyCanvasOperations,
   createCanvasElement,
+  curvePointsFromElement,
   deleteSelection,
   duplicateSelection,
   elementCenter,
   elementLabel,
   fitViewportToContent,
+  lineModeFromElement,
   moveSelection,
-  pointsToPath,
   pointFromData,
   selectElement,
   setSelectionLocked,
+  translateCanvasElement,
+  updateConnectorEndpoint,
   updateSelectionGeometry,
   updateSelectionStyle,
   updateViewport,
   updateZOrder
 } from "./canvasModel";
-import type { CanvasOperation, CanvasTool } from "./canvasModel";
+import type { CanvasOperation, CanvasTool, ConnectorEndpoint } from "./canvasModel";
+import { CanvasSurface } from "./CanvasSurface";
 import { createCanvasRealtimeAdapter, resolveRealtimeUrl } from "./realtime";
 import type { CanvasRealtimeAdapter, RealtimeStatus, RemotePresence } from "./realtime";
+import { zoomViewportAroundCenter } from "./viewportMath";
 
 type LoadStatus = "loading" | "ready" | "not_found" | "deleted" | "permission_denied" | "error";
 type SyncState = "saved" | "saving" | "offline" | "reconnecting" | "conflict" | "failed";
 type ActivePanel = "inspector" | "comments" | "snapshots" | "templates";
 
-type DragState = {
-  elementId: string;
-  startClientX: number;
-  startClientY: number;
-  startX: number;
-  startY: number;
-};
+const maxInlineImageBytes = 2 * 1024 * 1024;
+const supportedImageTypes = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"]);
+const curvePresetOptions = [
+  { value: "dashed", label: "Dashed" },
+  { value: "pulse", label: "Pulse forward" },
+  { value: "pulseReverse", label: "Pulse reverse" },
+  { value: "signal", label: "Signal forward" },
+  { value: "signalReverse", label: "Signal reverse" },
+  { value: "solid", label: "Solid" },
+  { value: "dotted", label: "Dotted" }
+] as const;
 
-const toolButtons: Array<{ tool: CanvasTool; label: string; icon: ReactNode; permission: "edit" | "comment" }> = [
+type CanvasToolButton = { tool: CanvasTool; label: string; icon: ReactNode; permission: "edit" | "comment"; spawn?: false } | { tool: CanvasElementType; label: string; icon: ReactNode; permission: "edit"; spawn: true };
+
+const selectionToolButtons: CanvasToolButton[] = [
   { tool: "select", label: "Select", icon: <MousePointer2 size={16} aria-hidden="true" />, permission: "edit" },
-  { tool: "rectangle", label: "Rectangle", icon: <Square size={16} aria-hidden="true" />, permission: "edit" },
-  { tool: "circle", label: "Circle", icon: <Circle size={16} aria-hidden="true" />, permission: "edit" },
-  { tool: "text", label: "Text", icon: <Type size={16} aria-hidden="true" />, permission: "edit" },
-  { tool: "image", label: "Image", icon: <Image size={16} aria-hidden="true" />, permission: "edit" },
-  { tool: "connector", label: "Connector", icon: <GitBranch size={16} aria-hidden="true" />, permission: "edit" },
-  { tool: "arrow", label: "Arrow", icon: <ArrowRight size={16} aria-hidden="true" />, permission: "edit" },
-  { tool: "freehand", label: "Freehand", icon: <Pencil size={16} aria-hidden="true" />, permission: "edit" },
+  { tool: "marquee", label: "Box select", icon: <SquareDashedMousePointer size={16} aria-hidden="true" />, permission: "edit" }
+];
+
+const spawnToolButtons: CanvasToolButton[] = [
+  { tool: "rectangle", label: "Rectangle", icon: <Square size={16} aria-hidden="true" />, permission: "edit", spawn: true },
+  { tool: "circle", label: "Circle", icon: <Circle size={16} aria-hidden="true" />, permission: "edit", spawn: true },
+  { tool: "text", label: "Text", icon: <Type size={16} aria-hidden="true" />, permission: "edit", spawn: true },
+  { tool: "image", label: "Image", icon: <Image size={16} aria-hidden="true" />, permission: "edit", spawn: true },
+  { tool: "connector", label: "Connector", icon: <GitBranch size={16} aria-hidden="true" />, permission: "edit", spawn: true },
+  { tool: "arrow", label: "Arrow", icon: <ArrowRight size={16} aria-hidden="true" />, permission: "edit", spawn: true },
+  { tool: "freehand", label: "Freehand", icon: <Pencil size={16} aria-hidden="true" />, permission: "edit" }
+];
+
+const commentToolButtons: CanvasToolButton[] = [
   { tool: "comment", label: "Comment", icon: <MessageSquare size={16} aria-hidden="true" />, permission: "comment" }
 ];
+
+const canvasToolGroups = [
+  { label: "Selection tools", items: selectionToolButtons },
+  { label: "Create elements", items: spawnToolButtons },
+  { label: "Canvas notes", items: commentToolButtons }
+] as const;
 
 export function CanvasRoute() {
   const { workspaceSlug = "", canvasId = "" } = useParams();
@@ -130,11 +156,16 @@ export function CanvasRoute() {
   const [exportFormat, setExportFormat] = useState<"svg" | "png" | "pdf" | "json">("svg");
   const [jobNotice, setJobNotice] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
-  const [dragState, setDragState] = useState<DragState | null>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [editingTextElementId, setEditingTextElementId] = useState<string | null>(null);
   const realtimeRef = useRef<CanvasRealtimeAdapter | null>(null);
   const contentRef = useRef<CanvasContent | null>(null);
   const canvasRef = useRef<CanvasResponse | null>(null);
   const realtimeStatusRef = useRef(realtimeStatus);
+  const saveQueueRef = useRef<CanvasOperation[]>([]);
+  const saveLoopRunningRef = useRef(false);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const previousBodyOverflowRef = useRef("");
   const seqRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
@@ -156,6 +187,40 @@ export function CanvasRoute() {
     realtimeStatusRef.current = realtimeStatus;
   }, [realtimeStatus]);
 
+  useEffect(() => {
+    if (!fullscreen) {
+      return;
+    }
+
+    previousBodyOverflowRef.current = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    viewportRef.current?.focus();
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflowRef.current;
+      previousFocusRef.current?.focus();
+      previousFocusRef.current = null;
+    };
+  }, [fullscreen]);
+
+  useEffect(() => {
+    if (!fullscreen) {
+      return;
+    }
+
+    function exitOnEscape(event: globalThis.KeyboardEvent) {
+      if (event.key !== "Escape") {
+        return;
+      }
+
+      event.preventDefault();
+      setFullscreen(false);
+    }
+
+    window.addEventListener("keydown", exitOnEscape);
+    return () => window.removeEventListener("keydown", exitOnEscape);
+  }, [fullscreen]);
+
   const loadCanvas = useCallback(async (signal?: AbortSignal) => {
     if (!canvasId) {
       setLoadStatus("not_found");
@@ -168,6 +233,16 @@ export function CanvasRoute() {
 
     try {
       const loadedCanvas = await getCanvas(auth.client, canvasId, signal);
+      if (activeWorkspace?.id && loadedCanvas.workspaceId !== activeWorkspace.id) {
+        setCanvas(null);
+        setContent(null);
+        setComments([]);
+        setSnapshots([]);
+        setTemplates([]);
+        setLoadStatus("not_found");
+        return;
+      }
+
       const [loadedComments, loadedSnapshots, loadedTemplates] = await Promise.all([
         listCanvasComments(auth.client, loadedCanvas.id, signal),
         listCanvasSnapshots(auth.client, loadedCanvas.id, signal),
@@ -175,7 +250,10 @@ export function CanvasRoute() {
       ]);
 
       setCanvas(loadedCanvas);
+      canvasRef.current = loadedCanvas;
       setContent(loadedCanvas.content);
+      contentRef.current = loadedCanvas.content;
+      saveQueueRef.current = [];
       setComments(loadedComments);
       setSnapshots(loadedSnapshots);
       setTemplates(loadedTemplates);
@@ -239,8 +317,17 @@ export function CanvasRoute() {
       });
     });
     const unsubscribeOperations = adapter.onRemoteOperation((message) => {
-      setContent((current) => current ? applyCanvasOperations(current, message.ops) : current);
-      setCanvas((current) => current ? { ...current, version: Math.max(current.version, message.version), lockVersion: Math.max(current.lockVersion, message.lockVersion ?? current.lockVersion) } : current);
+      setContent((current) => {
+        const localViewport = contentRef.current?.viewport ?? current?.viewport;
+        const nextContent = current && localViewport ? withViewport(applyCanvasOperations(current, message.ops), localViewport) : current;
+        contentRef.current = nextContent;
+        return nextContent;
+      });
+      setCanvas((current) => {
+        const nextCanvas = current ? { ...current, content: contentRef.current ?? current.content, version: Math.max(current.version, message.version), lockVersion: Math.max(current.lockVersion, message.lockVersion ?? current.lockVersion) } : current;
+        canvasRef.current = nextCanvas;
+        return nextCanvas;
+      });
       setSyncState("saved");
     });
     const unsubscribePresence = adapter.onPresence((remotePresence) => {
@@ -270,50 +357,173 @@ export function CanvasRoute() {
   const topLevelComments = useMemo(() => comments.filter((comment) => !comment.parentId), [comments]);
   const activeThread = useMemo(() => comments.find((comment) => comment.id === activeThreadId) ?? topLevelComments[0] ?? null, [activeThreadId, comments, topLevelComments]);
 
-  async function commitContent(nextContent: CanvasContent, ops: CanvasOperation[], nextSelection = selection) {
-    const currentCanvas = canvasRef.current;
-
-    if (!currentCanvas || !canEditCanvas || ops.length === 0) {
-      setContent(nextContent);
-      setSelection(nextSelection);
+  async function flushCanvasSaveQueue() {
+    if (saveLoopRunningRef.current) {
       return;
     }
 
-    setContent(nextContent);
-    setSelection(nextSelection);
-    setSyncState("saving");
-    setSyncError(null);
+    saveLoopRunningRef.current = true;
+    let conflictRetryUsed = false;
+    let restartQueuedWork = true;
 
     try {
-      const updated = await updateCanvas(auth.client, currentCanvas.id, {
-        content: nextContent,
-        expectedVersion: currentCanvas.version,
-        expectedLockVersion: currentCanvas.lockVersion
-      });
-      const realtime = realtimeRef.current;
-      if (realtime) {
-        const seq = seqRef.current + 1;
-        seqRef.current = seq;
-        void realtime.sendOperations(ops, updated.version, updated.lockVersion, seq);
+      while (saveQueueRef.current.length > 0) {
+        const currentCanvas = canvasRef.current;
+        const currentContent = contentRef.current;
+
+        if (!currentCanvas || !currentContent || !canEditCanvas) {
+          saveQueueRef.current = [];
+          return;
+        }
+
+        const ops = saveQueueRef.current;
+        saveQueueRef.current = [];
+
+        try {
+          const updated = await updateCanvas(auth.client, currentCanvas.id, {
+            content: currentContent,
+            expectedVersion: currentCanvas.version,
+            expectedLockVersion: currentCanvas.lockVersion
+          });
+          const latestContent = contentRef.current ?? updated.content;
+          const nextCanvas = { ...updated, content: latestContent };
+          const realtime = realtimeRef.current;
+
+          canvasRef.current = nextCanvas;
+          setCanvas(nextCanvas);
+          setSyncError(null);
+          conflictRetryUsed = false;
+
+          if (realtime) {
+            const seq = seqRef.current + 1;
+            seqRef.current = seq;
+            void realtime.sendOperations(ops, updated.version, updated.lockVersion, seq);
+          }
+
+          setSyncState(saveQueueRef.current.length > 0 ? "saving" : realtimeStatusRef.current.state === "connected" ? "saved" : "offline");
+        } catch (error) {
+          const appError = error instanceof AppError ? error : new AppError({ status: 0, code: "CANVAS_SAVE_FAILED", message: "Canvas changes could not be saved.", retryable: true });
+
+          if (appError.status === 409 && !conflictRetryUsed) {
+            conflictRetryUsed = true;
+
+            try {
+              const latestCanvas = await getCanvas(auth.client, currentCanvas.id);
+              const pendingOps = [...ops, ...saveQueueRef.current];
+              const rebasedContent = withViewport(applyCanvasOperations(latestCanvas.content, pendingOps), currentContent.viewport);
+              const nextCanvas = { ...latestCanvas, content: rebasedContent };
+
+              saveQueueRef.current = pendingOps;
+              canvasRef.current = nextCanvas;
+              contentRef.current = rebasedContent;
+              setCanvas(nextCanvas);
+              setContent(rebasedContent);
+              setSyncError(null);
+              setSyncState("saving");
+              continue;
+            } catch (reloadError) {
+              const reloadAppError = reloadError instanceof AppError ? reloadError : appError;
+              saveQueueRef.current = [...ops, ...saveQueueRef.current];
+              setSyncError(reloadAppError);
+              setSyncState("conflict");
+              restartQueuedWork = false;
+              return;
+            }
+          }
+
+          saveQueueRef.current = [...ops, ...saveQueueRef.current];
+          setSyncError(appError);
+          setSyncState(appError.status === 409 ? "conflict" : "failed");
+          restartQueuedWork = false;
+          return;
+        }
       }
-      setCanvas(updated);
-      setContent(updated.content);
+
       setSyncState(realtimeStatusRef.current.state === "connected" ? "saved" : "offline");
-    } catch (error) {
-      const appError = error instanceof AppError ? error : new AppError({ status: 0, code: "CANVAS_SAVE_FAILED", message: "Canvas changes could not be saved.", retryable: true });
-      setSyncError(appError);
-      setSyncState(appError.status === 409 ? "conflict" : "failed");
+    } finally {
+      saveLoopRunningRef.current = false;
+      if (restartQueuedWork && saveQueueRef.current.length > 0) {
+        void flushCanvasSaveQueue();
+      }
     }
   }
 
-  function addElement(type: CanvasElementType) {
-    if (!content || !canEditCanvas) {
+  function applyLocalCanvasOperations(ops: CanvasOperation[]) {
+    const baseContent = contentRef.current;
+
+    if (!baseContent || ops.length === 0) {
+      return baseContent;
+    }
+
+    const nextContent = applyCanvasOperations(baseContent, ops);
+    contentRef.current = nextContent;
+    setContent((current) => {
+      if (!current) {
+        return current;
+      }
+
+      if (current === baseContent) {
+        return nextContent;
+      }
+
+      const updatedContent = withViewport(applyCanvasOperations(current, ops), nextContent.viewport);
+      contentRef.current = updatedContent;
+      return updatedContent;
+    });
+
+    return nextContent;
+  }
+
+  function commitCanvasOperations(ops: CanvasOperation[], nextSelection = selection) {
+    const currentCanvas = canvasRef.current;
+    const nextContent = applyLocalCanvasOperations(ops);
+
+    setSelection(nextSelection);
+
+    if (!currentCanvas || !nextContent || !canEditCanvas || ops.length === 0) {
       return;
     }
 
-    const element = createCanvasElement(type, content.elements.length, { zIndex: content.elements.length + 1 });
+    saveQueueRef.current = [...saveQueueRef.current, ...ops];
+    setSyncState("saving");
+    setSyncError(null);
+    void flushCanvasSaveQueue();
+    window.setTimeout(() => {
+      if (!saveLoopRunningRef.current && saveQueueRef.current.length > 0) {
+        void flushCanvasSaveQueue();
+      }
+    }, 0);
+  }
+
+  function addElement(type: CanvasElementType) {
+    const currentContent = contentRef.current;
+
+    if (!currentContent || !canEditCanvas) {
+      return;
+    }
+
+    const baseElement = createCanvasElement(type, currentContent.elements.length, { zIndex: currentContent.elements.length + 1 });
+    const element = centerElementInViewport(baseElement, currentContent, currentViewportSize());
     const op: CanvasOperation = { type: "add", id: element.id, element };
-    void commitContent(applyCanvasOperations(content, [op]), [op], [element.id]);
+    void commitCanvasOperations([op], [element.id]);
+
+    if (type === "text") {
+      setEditingTextElementId(element.id);
+    }
+  }
+
+  function handleCanvasToolButtonClick(item: CanvasToolButton) {
+    if (item.spawn) {
+      addElement(item.tool);
+      setTool("select");
+      return;
+    }
+
+    setTool(item.tool);
+
+    if (item.tool === "comment") {
+      setActivePanel("comments");
+    }
   }
 
   function selectCanvasElement(elementId: string, mode: "replace" | "toggle" | "append" = "replace") {
@@ -327,104 +537,218 @@ export function CanvasRoute() {
   }
 
   function applyMove(dx: number, dy: number) {
-    if (!content || !canEditCanvas) {
+    const currentContent = contentRef.current;
+
+    if (!currentContent || !canEditCanvas) {
       return;
     }
 
-    const result = moveSelection(content, selection, dx, dy);
-    void commitContent(result.content, result.ops);
+    const result = moveSelection(currentContent, selection, dx, dy);
+    void commitCanvasOperations(result.ops);
   }
 
   function duplicateSelected() {
-    if (!content || !canEditCanvas) {
+    const currentContent = contentRef.current;
+
+    if (!currentContent || !canEditCanvas) {
       return;
     }
 
-    const result = duplicateSelection(content, selection);
-    void commitContent(result.content, result.ops, result.selection);
+    const result = duplicateSelection(currentContent, selection);
+    void commitCanvasOperations(result.ops, result.selection);
   }
 
   function deleteSelected() {
-    if (!content || !canEditCanvas) {
+    const currentContent = contentRef.current;
+
+    if (!currentContent || !canEditCanvas) {
       return;
     }
 
-    const result = deleteSelection(content, selection);
-    void commitContent(result.content, result.ops, result.selection);
+    const result = deleteSelection(currentContent, selection);
+    void commitCanvasOperations(result.ops, result.selection);
   }
 
   function setLocked(locked: boolean) {
-    if (!content || !canEditCanvas) {
+    const currentContent = contentRef.current;
+
+    if (!currentContent || !canEditCanvas) {
       return;
     }
 
-    const result = setSelectionLocked(content, selection, locked);
-    void commitContent(result.content, result.ops);
+    const result = setSelectionLocked(currentContent, selection, locked);
+    void commitCanvasOperations(result.ops);
   }
 
   function updateSelectedStyle(style: Parameters<typeof updateSelectionStyle>[2]) {
-    if (!content || !canEditCanvas) {
+    const currentContent = contentRef.current;
+
+    if (!currentContent || !canEditCanvas) {
       return;
     }
 
-    const result = updateSelectionStyle(content, selection, style);
-    void commitContent(result.content, result.ops);
+    const result = updateSelectionStyle(currentContent, selection, style);
+    void commitCanvasOperations(result.ops);
   }
 
   function updateSelectedGeometry(changes: Parameters<typeof updateSelectionGeometry>[2]) {
-    if (!content || !canEditCanvas) {
+    const currentContent = contentRef.current;
+
+    if (!currentContent || !canEditCanvas) {
       return;
     }
 
-    const result = updateSelectionGeometry(content, selection, changes);
-    void commitContent(result.content, result.ops);
+    const result = updateSelectionGeometry(currentContent, selection, changes);
+    void commitCanvasOperations(result.ops);
   }
 
   function updateSelectedData(data: Partial<CanvasElement["data"]>) {
-    if (!content || !selectedElement || !canEditCanvas) {
+    const currentContent = contentRef.current;
+    const currentSelectedElement = currentContent?.elements.find((element) => element.id === selectedElement?.id);
+
+    if (!currentContent || !currentSelectedElement || !canEditCanvas) {
       return;
     }
 
-    const op: CanvasOperation = { type: "update", id: selectedElement.id, changes: { data: { ...selectedElement.data, ...data } } };
-    void commitContent(applyCanvasOperations(content, [op]), [op]);
+    const nextData = Object.entries(data).reduce<CanvasElement["data"]>((current, [key, value]) => {
+      if (value === undefined) {
+        delete current[key];
+        return current;
+      }
+
+      current[key] = value;
+      return current;
+    }, { ...currentSelectedElement.data });
+    const op: CanvasOperation = { type: "update", id: currentSelectedElement.id, changes: { data: nextData } };
+    void commitCanvasOperations([op]);
+  }
+
+  function updateSelectedConnectorEndpoint(handle: ConnectorEndpoint, changes: Partial<CanvasPoint>) {
+    const currentContent = contentRef.current;
+    const currentSelectedElement = currentContent?.elements.find((element) => element.id === selectedElement?.id);
+
+    if (!currentContent || !currentSelectedElement || !canEditCanvas || currentSelectedElement.locked || !isLineElement(currentSelectedElement)) {
+      return;
+    }
+
+    const currentPoint = pointFromData(currentSelectedElement.data[handle], endpointFallback(currentSelectedElement, handle));
+    const op: CanvasOperation = {
+      type: "update",
+      id: currentSelectedElement.id,
+      changes: updateConnectorEndpoint(currentSelectedElement, handle, { ...currentPoint, ...changes })
+    };
+
+    void commitCanvasOperations([op]);
   }
 
   function moveZOrder(direction: "front" | "back") {
-    if (!content || !canEditCanvas) {
+    const currentContent = contentRef.current;
+
+    if (!currentContent || !canEditCanvas) {
       return;
     }
 
-    const result = updateZOrder(content, selection, direction);
-    void commitContent(result.content, result.ops);
+    const result = updateZOrder(currentContent, selection, direction);
+    void commitCanvasOperations(result.ops);
   }
 
   function setGroup(grouped: boolean) {
-    if (!content || !canEditCanvas) {
+    const currentContent = contentRef.current;
+
+    if (!currentContent || !canEditCanvas) {
       return;
     }
 
     const groupId = grouped ? `group-${Date.now()}` : null;
     const selected = new Set(selection);
-    const ops = content.elements.flatMap((element) => selected.has(element.id) && !element.locked ? [{ type: "update" as const, id: element.id, changes: { groupId } }] : []);
-    void commitContent(applyCanvasOperations(content, ops), ops);
+    const ops = currentContent.elements.flatMap((element) => selected.has(element.id) && !element.locked ? [{ type: "update" as const, id: element.id, changes: { groupId } }] : []);
+    void commitCanvasOperations(ops);
   }
 
   function changeViewport(nextViewport: CanvasContent["viewport"]) {
-    if (!content) {
+    applyViewportChange(nextViewport, false);
+  }
+
+  function toggleFullscreen() {
+    setFullscreen((current) => {
+      if (!current) {
+        previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      }
+
+      return !current;
+    });
+  }
+
+  function currentViewportSize() {
+    const viewportRect = viewportRef.current?.getBoundingClientRect();
+    return {
+      width: viewportRect?.width || viewportRef.current?.clientWidth || 960,
+      height: viewportRect?.height || viewportRef.current?.clientHeight || 672
+    };
+  }
+
+  function zoomToolbar(delta: number) {
+    const currentContent = contentRef.current;
+
+    if (!currentContent) {
       return;
     }
 
-    const result = updateViewport(content, nextViewport);
-    void commitContent(result.content, result.ops);
+    changeViewport(zoomViewportAroundCenter(
+      currentContent.viewport,
+      currentViewportSize(),
+      currentContent.viewport.zoom + delta
+    ));
+  }
+
+  function applyViewportChange(nextViewport: CanvasContent["viewport"], persist: boolean) {
+    const currentContent = contentRef.current;
+
+    if (!currentContent) {
+      return;
+    }
+
+    const result = updateViewport(currentContent, nextViewport);
+
+    if (persist) {
+      void commitCanvasOperations(result.ops);
+      return;
+    }
+
+    applyLocalCanvasOperations(result.ops);
+  }
+
+  function commitCanvasSurfaceOperations(ops: CanvasOperation[], nextSelection = selection) {
+    const currentContent = contentRef.current;
+
+    if (!currentContent || ops.length === 0) {
+      return;
+    }
+
+    void commitCanvasOperations(ops, nextSelection);
+  }
+
+  function updateCanvasCoordinate(nextCoordinate: { x: number; y: number }) {
+    setCoordinate(nextCoordinate);
+    void realtimeRef.current?.sendPresence({ cursor: nextCoordinate, selection, status: "online" });
+  }
+
+  function updateCanvasSelection(nextSelection: string[]) {
+    setSelection(nextSelection);
+    void realtimeRef.current?.sendPresence({ cursor: coordinate, selection: nextSelection, status: "online" });
   }
 
   function toggleGrid() {
-    if (!content) {
+    const currentContent = contentRef.current;
+
+    if (!currentContent) {
       return;
     }
 
-    const op: CanvasOperation = { type: "update-state", state: { metadata: { gridEnabled: !content.metadata.gridEnabled } } };
-    void commitContent(applyCanvasOperations(content, [op]), [op]);
+    const op: CanvasOperation = { type: "update-state", state: { metadata: { gridEnabled: !currentContent.metadata.gridEnabled } } };
+    const nextContent = applyCanvasOperations(currentContent, [op]);
+    contentRef.current = nextContent;
+    setContent(nextContent);
   }
 
   function keyboardMove(event: KeyboardEvent<HTMLElement>) {
@@ -468,60 +792,21 @@ export function CanvasRoute() {
     }
   }
 
-  function pointerCoordinate(event: PointerEvent<HTMLElement | SVGSVGElement>) {
-    const rect = viewportRef.current?.getBoundingClientRect();
-    const currentContent = contentRef.current;
+  useEffect(() => {
+    function handleGlobalDelete(event: globalThis.KeyboardEvent) {
+      if (event.defaultPrevented || editingTextElementId || isEditableKeyboardTarget(event.target)) {
+        return;
+      }
 
-    if (!rect || !currentContent) {
-      return { x: 0, y: 0 };
+      if ((event.key === "Delete" || event.key === "Backspace") && selection.length > 0 && canEditCanvas) {
+        event.preventDefault();
+        deleteSelected();
+      }
     }
 
-    return {
-      x: Math.round((event.clientX - rect.left - currentContent.viewport.panX) / currentContent.viewport.zoom),
-      y: Math.round((event.clientY - rect.top - currentContent.viewport.panY) / currentContent.viewport.zoom)
-    };
-  }
-
-  function updatePointerCoordinate(event: PointerEvent<HTMLElement | SVGSVGElement>) {
-    const nextCoordinate = pointerCoordinate(event);
-    setCoordinate(nextCoordinate);
-    void realtimeRef.current?.sendPresence({ cursor: nextCoordinate, selection, status: "online" });
-
-    if (dragState && contentRef.current) {
-      const dx = (event.clientX - dragState.startClientX) / contentRef.current.viewport.zoom;
-      const dy = (event.clientY - dragState.startClientY) / contentRef.current.viewport.zoom;
-      const op: CanvasOperation = { type: "update", id: dragState.elementId, changes: { x: Math.round(dragState.startX + dx), y: Math.round(dragState.startY + dy) } };
-      setContent(applyCanvasOperations(contentRef.current, [op]));
-    }
-  }
-
-  function startDrag(event: PointerEvent<SVGGElement>, element: CanvasElement) {
-    if (!canEditCanvas || element.locked || tool !== "select") {
-      return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-    setDragState({ elementId: element.id, startClientX: event.clientX, startClientY: event.clientY, startX: element.x, startY: element.y });
-    selectCanvasElement(element.id, event.shiftKey ? "toggle" : "replace");
-  }
-
-  function finishDrag() {
-    if (!dragState || !contentRef.current || !canEditCanvas) {
-      setDragState(null);
-      return;
-    }
-
-    const dragged = contentRef.current.elements.find((element) => element.id === dragState.elementId);
-    setDragState(null);
-
-    if (!dragged) {
-      return;
-    }
-
-    const op: CanvasOperation = { type: "update", id: dragged.id, changes: { x: dragged.x, y: dragged.y } };
-    void commitContent(contentRef.current, [op]);
-  }
+    window.addEventListener("keydown", handleGlobalDelete);
+    return () => window.removeEventListener("keydown", handleGlobalDelete);
+  }, [canEditCanvas, editingTextElementId, selection]);
 
   async function submitComment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -572,6 +857,22 @@ export function CanvasRoute() {
 
     const updated = await updateCanvasComment(auth.client, canvas.id, comment.id, { resolved });
     setComments((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+  }
+
+  async function moveCommentPin(commentId: string, position: CanvasPoint) {
+    if (!canvas || !canComment) {
+      return;
+    }
+
+    const nextPosition = { x: Math.round(position.x * 10) / 10, y: Math.round(position.y * 10) / 10 };
+    setComments((current) => current.map((item) => (item.id === commentId ? { ...item, position: nextPosition } : item)));
+
+    try {
+      const updated = await updateCanvasComment(auth.client, canvas.id, commentId, { position: nextPosition });
+      setComments((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+    } catch (error) {
+      setSyncError(error instanceof AppError ? error : new AppError({ status: 0, code: "COMMENT_MOVE_FAILED", message: "Comment pin position could not be saved.", retryable: true }));
+    }
   }
 
   async function removeComment(comment: CommentResponse) {
@@ -710,7 +1011,17 @@ export function CanvasRoute() {
   }
 
   if (loadStatus === "not_found") {
-    return <EmptyState title="Canvas not found" copy="The canvas id in this route does not match an accessible canvas in the current workspace." />;
+    return (
+      <EmptyState
+        title="Canvas not found"
+        copy="The canvas id in this route does not match an accessible canvas in the current workspace."
+        action={
+          <Link className="button button-secondary" to={`/w/${workspaceSlug}/c`}>
+            Back to canvases
+          </Link>
+        }
+      />
+    );
   }
 
   if (loadStatus === "deleted") {
@@ -727,7 +1038,7 @@ export function CanvasRoute() {
 
   return (
     <section className="canvas-route" aria-labelledby="canvas-title">
-      <div className="canvas-workbench">
+      <div className={`canvas-workbench ${fullscreen ? "is-fullscreen" : ""}`}>
         <div className="canvas-workbench-header">
           <div>
             <span className="kicker">Canvas workbench</span>
@@ -736,38 +1047,8 @@ export function CanvasRoute() {
               Workspace {workspaceSlug} · canvas/{canvas.id} · version {canvas.version} · updated {formatDate(canvas.updatedAt)}
             </p>
           </div>
-          <div className="canvas-status-strip" aria-label="Canvas status">
-            <StatusChip tone={syncTone(syncState)}>{syncLabel(syncState)}</StatusChip>
-            <StatusChip tone={realtimeStatus.state === "connected" ? "healthy" : realtimeStatus.state === "failed" ? "danger" : "warning"}>{realtimeStatus.label}</StatusChip>
-            <StatusChip tone={canEditCanvas ? "healthy" : canComment ? "warning" : "neutral"}>{mode}</StatusChip>
-          </div>
-        </div>
-
-        <div className="canvas-main-grid">
-          <PaperSurface className="canvas-editor-shell" as="article">
-            <div className="canvas-toolbar" aria-label="Canvas tools">
-              {toolButtons.map((item) => {
-                const enabled = item.permission === "edit" ? canEditCanvas : canComment;
-                return (
-                  <Button className={tool === item.tool ? "is-active" : ""} key={item.tool} variant="secondary" icon={item.icon} disabled={!enabled} aria-pressed={tool === item.tool} onClick={() => {
-                    setTool(item.tool);
-                    if (item.tool !== "select" && item.tool !== "comment") {
-                      addElement(item.tool);
-                    } else if (item.tool === "comment") {
-                      setActivePanel("comments");
-                    }
-                  }}>
-                    {item.label}
-                  </Button>
-                );
-              })}
-              <div className="toolbar-divider" />
-              <IconButton label="Zoom out" icon={<ZoomOut size={16} aria-hidden="true" />} onClick={() => changeViewport({ ...content.viewport, zoom: content.viewport.zoom - 0.1 })} />
-              <IconButton label="Zoom in" icon={<ZoomIn size={16} aria-hidden="true" />} onClick={() => changeViewport({ ...content.viewport, zoom: content.viewport.zoom + 0.1 })} />
-              <IconButton label="Fit to content" icon={<Maximize2 size={16} aria-hidden="true" />} onClick={() => changeViewport(fitViewportToContent(content))} />
-              <IconButton label={content.metadata.gridEnabled ? "Hide grid" : "Show grid"} icon={<Grid3X3 size={16} aria-hidden="true" />} onClick={toggleGrid} />
-              <IconButton label="Pan canvas right" icon={<Move size={16} aria-hidden="true" />} onClick={() => changeViewport({ ...content.viewport, panX: content.viewport.panX + 32 })} />
-              <div className="toolbar-divider" />
+          <div className="canvas-header-right">
+            <div className="canvas-header-actions" aria-label="Canvas actions">
               <Button variant="secondary" icon={<Camera size={16} aria-hidden="true" />} disabled={!canEditCanvas} onClick={() => void createSnapshot()}>
                 Snapshot
               </Button>
@@ -785,29 +1066,71 @@ export function CanvasRoute() {
                 Export
               </Button>
             </div>
+            <div className="canvas-status-strip canvas-status-row" aria-label="Canvas status">
+              <StatusChip tone={syncTone(syncState)}>{syncLabel(syncState)}</StatusChip>
+              <StatusChip tone={realtimeStatus.state === "connected" ? "healthy" : realtimeStatus.state === "failed" ? "danger" : "warning"}>{realtimeStatus.label}</StatusChip>
+              <StatusChip tone={canEditCanvas ? "healthy" : canComment ? "warning" : "neutral"}>{mode}</StatusChip>
+            </div>
+          </div>
+        </div>
 
-            <div className="canvas-viewport-wrap" ref={viewportRef} tabIndex={0} role="application" aria-label="Canvas viewport" onKeyDown={keyboardMove} onPointerMove={updatePointerCoordinate} onPointerUp={finishDrag} onPointerLeave={finishDrag}>
-              {content.elements.length === 0 ? <EmptyCanvasOverlay canEdit={canEditCanvas} onCreate={() => addElement("rectangle")} /> : null}
-              <svg className="canvas-svg" viewBox={`0 0 ${content.metadata.width} ${content.metadata.height}`} role="img" aria-label={`${canvas.title} canvas with ${content.elements.length} elements`} onPointerDown={() => clearSelection()}>
-                <defs>
-                  <marker id="canvas-arrowhead" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-                    <path d="M 0 0 L 8 4 L 0 8 z" fill="#273142" />
-                  </marker>
-                  {content.metadata.gridEnabled ? (
-                    <pattern id="canvas-grid" width="32" height="32" patternUnits="userSpaceOnUse">
-                      <path d="M 32 0 L 0 0 0 32" fill="none" stroke="rgba(77, 124, 254, 0.22)" strokeWidth="1" />
-                    </pattern>
-                  ) : null}
-                </defs>
-                <rect width={content.metadata.width} height={content.metadata.height} fill={content.metadata.backgroundColor} />
-                {content.metadata.gridEnabled ? <rect width={content.metadata.width} height={content.metadata.height} fill="url(#canvas-grid)" /> : null}
-                <g transform={`translate(${content.viewport.panX} ${content.viewport.panY}) scale(${content.viewport.zoom})`}>
-                  {content.elements.map((element) => (
-                    <CanvasElementView key={element.id} element={element} selected={selection.includes(element.id)} onPointerDown={(event) => startDrag(event, element)} onSelect={(append) => selectCanvasElement(element.id, append ? "toggle" : "replace")} />
-                  ))}
-                </g>
-              </svg>
-              <CanvasOverlays content={content} comments={topLevelComments} presence={presence} selection={selection} activeThreadId={activeThreadId} onOpenThread={(commentId) => {
+        <div className="canvas-main-grid">
+          <PaperSurface className={`canvas-editor-shell ${fullscreen ? "is-fullscreen" : ""}`} as="article">
+            <div className="canvas-viewport-wrap" ref={viewportRef} tabIndex={0} role="application" aria-label="Canvas viewport" onKeyDown={keyboardMove}>
+              {content.elements.length === 0 ? <EmptyCanvasOverlay canEdit={canEditCanvas} onCreate={() => {
+                addElement("rectangle");
+                setTool("select");
+              }} /> : null}
+              <div className="canvas-tool-rail" aria-label="Canvas tools">
+                {canvasToolGroups.map((group) => (
+                  <div className="canvas-tool-group" key={group.label} aria-label={group.label}>
+                    {group.items.map((item) => {
+                      const enabled = item.permission === "edit" ? canEditCanvas : canComment;
+                      return (
+                        <IconButton
+                          className={`canvas-tool-button ${tool === item.tool ? "is-active" : ""}`}
+                          key={item.tool}
+                          label={item.label}
+                          icon={item.icon}
+                          disabled={!enabled}
+                          aria-pressed={tool === item.tool}
+                          onClick={() => handleCanvasToolButtonClick(item)}
+                        />
+                      );
+                    })}
+                    {group.label === "Selection tools" ? (
+                      <IconButton
+                        className="canvas-tool-button canvas-tool-delete"
+                        label="Delete selection"
+                        icon={<Trash2 size={16} aria-hidden="true" />}
+                        disabled={!canEditCanvas || selection.length === 0}
+                        onClick={deleteSelected}
+                      />
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+              <div className="canvas-camera-controls" aria-label="Canvas camera controls">
+                <IconButton className="canvas-camera-button" label="Zoom out" icon={<ZoomOut size={16} aria-hidden="true" />} onClick={() => zoomToolbar(-0.1)} />
+                <IconButton className="canvas-camera-button" label="Zoom in" icon={<ZoomIn size={16} aria-hidden="true" />} onClick={() => zoomToolbar(0.1)} />
+                <IconButton className="canvas-camera-button" label="Fit to content" icon={<ScanSearch size={16} aria-hidden="true" />} onClick={() => changeViewport(fitViewportToContent(content, currentViewportSize()))} />
+                <IconButton className="canvas-camera-button" label={content.metadata.gridEnabled ? "Hide grid" : "Show grid"} icon={<Grid3X3 size={16} aria-hidden="true" />} aria-pressed={content.metadata.gridEnabled} onClick={toggleGrid} />
+                <IconButton className="canvas-camera-button canvas-fullscreen-button" label={fullscreen ? "Exit fullscreen" : "Canvas fullscreen"} icon={fullscreen ? <Minimize2 size={16} aria-hidden="true" /> : <Maximize2 size={16} aria-hidden="true" />} aria-pressed={fullscreen} onClick={toggleFullscreen} />
+              </div>
+              <CanvasSurface
+                content={content}
+                selection={selection}
+                title={canvas.title}
+                canEdit={canEditCanvas}
+                tool={tool}
+                onCoordinateChange={updateCanvasCoordinate}
+                onSelectionChange={updateCanvasSelection}
+                onCommitOperations={commitCanvasSurfaceOperations}
+                onViewportChange={applyViewportChange}
+                editingTextElementId={editingTextElementId}
+                onTextEditingChange={setEditingTextElementId}
+              />
+              <CanvasOverlays content={content} comments={topLevelComments} presence={presence} selection={selection} activeThreadId={activeThreadId} canMoveComments={canComment} onMoveComment={(commentId, position) => void moveCommentPin(commentId, position)} onOpenThread={(commentId) => {
                 setActiveThreadId(commentId);
                 setActivePanel("comments");
               }} />
@@ -818,75 +1141,76 @@ export function CanvasRoute() {
                 <span>{cacheKey.join(" / ")}</span>
               </div>
             </div>
-          </PaperSurface>
 
-          <aside className="canvas-side-panel" aria-label="Canvas workbench panels">
-            <div className="panel-tabs" role="tablist" aria-label="Canvas panels">
-              {(["inspector", "comments", "snapshots", "templates"] as ActivePanel[]).map((panel) => (
-                <button className={activePanel === panel ? "is-active" : ""} key={panel} type="button" role="tab" aria-selected={activePanel === panel} onClick={() => setActivePanel(panel)}>
-                  {panel}
-                </button>
-              ))}
-            </div>
-            {activePanel === "inspector" ? (
-              <InspectorPanel
-                canvas={canvas}
-                content={content}
-                selectedElements={selectedElements}
-                canEdit={canEditCanvas}
-                validation={validation}
-                syncError={syncError}
-                onClear={clearSelection}
-                onDuplicate={duplicateSelected}
-                onDelete={deleteSelected}
-                onLock={() => setLocked(true)}
-                onUnlock={() => setLocked(false)}
-                onFront={() => moveZOrder("front")}
-                onBack={() => moveZOrder("back")}
-                onGroup={() => setGroup(true)}
-                onUngroup={() => setGroup(false)}
-                onStyle={updateSelectedStyle}
-                onGeometry={updateSelectedGeometry}
-                onData={updateSelectedData}
-                onSelectElement={(elementId) => selectCanvasElement(elementId)}
-              />
-            ) : null}
-            {activePanel === "comments" ? (
-              <CommentsPanel
-                comments={comments}
-                content={content}
-                activeThread={activeThread}
-                canComment={canComment}
-                selectedElementId={selection.length === 1 ? selection[0] : null}
-                commentDraft={commentDraft}
-                replyDraft={replyDraft}
-                editingCommentId={editingCommentId}
-                editingDraft={editingDraft}
-                onDraft={setCommentDraft}
-                onReplyDraft={setReplyDraft}
-                onSubmit={submitComment}
-                onSubmitReply={submitReply}
-                onOpenThread={setActiveThreadId}
-                onStartEdit={(comment) => {
-                  setEditingCommentId(comment.id);
-                  setEditingDraft(comment.content);
-                }}
-                onEditDraft={setEditingDraft}
-                onSaveEdit={(comment) => void saveCommentEdit(comment)}
-                onCancelEdit={() => {
-                  setEditingCommentId(null);
-                  setEditingDraft("");
-                }}
-                onResolve={(comment) => void resolveComment(comment, true)}
-                onReopen={(comment) => void resolveComment(comment, false)}
-                onDelete={(comment) => void removeComment(comment)}
-              />
-            ) : null}
-            {activePanel === "snapshots" ? <SnapshotsPanel snapshots={snapshots} canEdit={canEditCanvas} onCreate={() => void createSnapshot()} onRestore={setRestoreTarget} /> : null}
-            {activePanel === "templates" ? (
-              <TemplatesPanel templates={templates} canEdit={canEditCanvas} templateName={templateName} onTemplateName={setTemplateName} onSubmit={submitTemplate} onCreateFromTemplate={(template) => void createFromTemplate(template)} />
-            ) : null}
-          </aside>
+            <aside className="canvas-side-panel" aria-label="Canvas workbench panels">
+              <div className="panel-tabs" role="tablist" aria-label="Canvas panels">
+                {(["inspector", "comments", "snapshots", "templates"] as ActivePanel[]).map((panel) => (
+                  <button className={activePanel === panel ? "is-active" : ""} key={panel} type="button" role="tab" aria-selected={activePanel === panel} onClick={() => setActivePanel(panel)}>
+                    {panel}
+                  </button>
+                ))}
+              </div>
+              {activePanel === "inspector" ? (
+                <InspectorPanel
+                  canvas={canvas}
+                  content={content}
+                  selectedElements={selectedElements}
+                  canEdit={canEditCanvas}
+                  validation={validation}
+                  syncError={syncError}
+                  onClear={clearSelection}
+                  onDuplicate={duplicateSelected}
+                  onDelete={deleteSelected}
+                  onLock={() => setLocked(true)}
+                  onUnlock={() => setLocked(false)}
+                  onFront={() => moveZOrder("front")}
+                  onBack={() => moveZOrder("back")}
+                  onGroup={() => setGroup(true)}
+                  onUngroup={() => setGroup(false)}
+                  onStyle={updateSelectedStyle}
+                  onGeometry={updateSelectedGeometry}
+                  onData={updateSelectedData}
+                  onEndpoint={updateSelectedConnectorEndpoint}
+                  onSelectElement={(elementId) => selectCanvasElement(elementId)}
+                />
+              ) : null}
+              {activePanel === "comments" ? (
+                <CommentsPanel
+                  comments={comments}
+                  content={content}
+                  activeThread={activeThread}
+                  canComment={canComment}
+                  selectedElementId={selection.length === 1 ? selection[0] : null}
+                  commentDraft={commentDraft}
+                  replyDraft={replyDraft}
+                  editingCommentId={editingCommentId}
+                  editingDraft={editingDraft}
+                  onDraft={setCommentDraft}
+                  onReplyDraft={setReplyDraft}
+                  onSubmit={submitComment}
+                  onSubmitReply={submitReply}
+                  onOpenThread={setActiveThreadId}
+                  onStartEdit={(comment) => {
+                    setEditingCommentId(comment.id);
+                    setEditingDraft(comment.content);
+                  }}
+                  onEditDraft={setEditingDraft}
+                  onSaveEdit={(comment) => void saveCommentEdit(comment)}
+                  onCancelEdit={() => {
+                    setEditingCommentId(null);
+                    setEditingDraft("");
+                  }}
+                  onResolve={(comment) => void resolveComment(comment, true)}
+                  onReopen={(comment) => void resolveComment(comment, false)}
+                  onDelete={(comment) => void removeComment(comment)}
+                />
+              ) : null}
+              {activePanel === "snapshots" ? <SnapshotsPanel snapshots={snapshots} canEdit={canEditCanvas} onCreate={() => void createSnapshot()} onRestore={setRestoreTarget} /> : null}
+              {activePanel === "templates" ? (
+                <TemplatesPanel templates={templates} canEdit={canEditCanvas} templateName={templateName} onTemplateName={setTemplateName} onSubmit={submitTemplate} onCreateFromTemplate={(template) => void createFromTemplate(template)} />
+              ) : null}
+            </aside>
+          </PaperSurface>
         </div>
 
         {importError ? <div className="canvas-alert danger" role="alert">{importError}</div> : null}
@@ -915,84 +1239,124 @@ export function CanvasRoute() {
   );
 }
 
-function CanvasElementView({ element, selected, onPointerDown, onSelect }: { element: CanvasElement; selected: boolean; onPointerDown: (event: PointerEvent<SVGGElement>) => void; onSelect: (append: boolean) => void }) {
-  const stroke = stringStyle(element.style.stroke, "#273142");
-  const fill = stringStyle(element.style.fill, "transparent");
-  const strokeWidth = numberStyle(element.style.strokeWidth, 2);
-  const opacity = numberStyle(element.style.opacity, 1);
-  const transform = `rotate(${element.rotation} ${element.x + element.width / 2} ${element.y + element.height / 2})`;
+type CommentDragState = {
+  commentId: string;
+  pointerId: number;
+  position: CanvasPoint;
+  offset: CanvasPoint;
+  moved: boolean;
+};
 
-  return (
-    <g className={`canvas-element ${selected ? "is-selected" : ""} ${element.locked ? "is-locked" : ""}`} transform={transform} onPointerDown={onPointerDown} onClick={(event) => {
-      event.stopPropagation();
-      onSelect(event.shiftKey);
-    }}>
-      {renderElementShape(element, fill, stroke, strokeWidth, opacity)}
-      {selected ? <rect className="selection-outline" x={element.x - 6} y={element.y - 6} width={element.width + 12} height={element.height + 12} rx="8" /> : null}
-    </g>
-  );
-}
-
-function renderElementShape(element: CanvasElement, fill: string, stroke: string, strokeWidth: number, opacity: number) {
-  if (element.type === "circle") {
-    return (
-      <g>
-        <ellipse cx={element.x + element.width / 2} cy={element.y + element.height / 2} rx={element.width / 2} ry={element.height / 2} fill={fill} stroke={stroke} strokeWidth={strokeWidth} opacity={opacity} />
-        <text x={element.x + element.width / 2} y={element.y + element.height / 2 + 5} textAnchor="middle" fill="#273142" fontSize="15" fontWeight="700">{String(element.data.text ?? "Circle")}</text>
-      </g>
-    );
-  }
-
-  if (element.type === "text") {
-    return (
-      <text x={element.x} y={element.y + 28} fill={stroke === "transparent" ? "#273142" : stroke} fontFamily={stringStyle(element.style.fontFamily, "Inter")} fontSize={numberStyle(element.style.fontSize, 18)} fontWeight={String(element.style.fontWeight ?? 700)} opacity={opacity}>
-        {String(element.data.text ?? "Text")}
-      </text>
-    );
-  }
-
-  if (element.type === "image") {
-    return (
-      <g>
-        <rect x={element.x} y={element.y} width={element.width} height={element.height} rx="8" fill="#ffffff" stroke={stroke} strokeWidth={strokeWidth} opacity={opacity} />
-        <path d={`M ${element.x + 20} ${element.y + element.height - 24} L ${element.x + 72} ${element.y + element.height - 72} L ${element.x + 112} ${element.y + element.height - 32}`} fill="none" stroke="#8a5cff" strokeWidth="4" />
-        <text x={element.x + 18} y={element.y + 28} fill="#273142" fontSize="14" fontWeight="700">{String(element.data.text ?? "Image placeholder")}</text>
-      </g>
-    );
-  }
-
-  if (element.type === "connector" || element.type === "arrow") {
-    const start = pointFromData(element.data.start, { x: element.x, y: element.y });
-    const end = pointFromData(element.data.end, { x: element.x + element.width, y: element.y + element.height });
-    return <line x1={start.x} y1={start.y} x2={end.x} y2={end.y} stroke={stroke} strokeWidth={strokeWidth} opacity={opacity} markerEnd={element.type === "arrow" ? "url(#canvas-arrowhead)" : undefined} />;
-  }
-
-  if (element.type === "freehand") {
-    const points = Array.isArray(element.data.points) ? element.data.points : [];
-    const path = typeof element.data.path === "string" ? element.data.path : pointsToPath(points);
-    return <path d={path} fill="none" stroke={stroke} strokeWidth={strokeWidth} opacity={opacity} strokeLinecap="round" strokeLinejoin="round" />;
-  }
-
-  return (
-    <g>
-      <rect x={element.x} y={element.y} width={element.width} height={element.height} rx="8" fill={fill} stroke={stroke} strokeWidth={strokeWidth} opacity={opacity} />
-      <text x={element.x + element.width / 2} y={element.y + element.height / 2 + 5} textAnchor="middle" fill="#273142" fontSize="15" fontWeight="700">{String(element.data.text ?? "Rectangle")}</text>
-    </g>
-  );
-}
-
-function CanvasOverlays({ content, comments, presence, selection, activeThreadId, onOpenThread }: { content: CanvasContent; comments: CommentResponse[]; presence: RemotePresence[]; selection: string[]; activeThreadId: string | null; onOpenThread: (commentId: string) => void }) {
+function CanvasOverlays({ content, comments, presence, selection, activeThreadId, canMoveComments, onMoveComment, onOpenThread }: { content: CanvasContent; comments: CommentResponse[]; presence: RemotePresence[]; selection: string[]; activeThreadId: string | null; canMoveComments: boolean; onMoveComment: (commentId: string, position: CanvasPoint) => void; onOpenThread: (commentId: string) => void }) {
+  const [dragState, setDragState] = useState<CommentDragState | null>(null);
+  const suppressedClickRef = useRef<string | null>(null);
   const elementMap = new Map(content.elements.map((element) => [element.id, element]));
+
+  function eventCanvasPosition(event: ReactPointerEvent<HTMLElement>) {
+    const viewport = event.currentTarget.closest<HTMLElement>(".canvas-viewport-wrap");
+    const rect = viewport?.getBoundingClientRect();
+    if (!rect) {
+      return null;
+    }
+    return {
+      x: (event.clientX - rect.left - content.viewport.panX) / content.viewport.zoom,
+      y: (event.clientY - rect.top - content.viewport.panY) / content.viewport.zoom
+    };
+  }
+
+  function startCommentDrag(event: ReactPointerEvent<HTMLButtonElement>, commentId: string, position: CanvasPoint) {
+    if (!canMoveComments || event.button !== 0) {
+      return;
+    }
+
+    const pointerPosition = eventCanvasPosition(event);
+    if (!pointerPosition) {
+      return;
+    }
+
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    setDragState({
+      commentId,
+      pointerId: event.pointerId,
+      position,
+      offset: { x: pointerPosition.x - position.x, y: pointerPosition.y - position.y },
+      moved: false
+    });
+  }
+
+  function updateCommentDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (!dragState || dragState.pointerId !== event.pointerId) {
+      return;
+    }
+
+    const position = eventCanvasPosition(event);
+    if (!position) {
+      return;
+    }
+
+    event.preventDefault();
+    setDragState((current) => current && current.pointerId === event.pointerId ? { ...current, position: { x: position.x - current.offset.x, y: position.y - current.offset.y }, moved: true } : current);
+  }
+
+  function finishCommentDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (!dragState || dragState.pointerId !== event.pointerId) {
+      return;
+    }
+
+    const nextDragState = dragState;
+    setDragState(null);
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    if (nextDragState.moved) {
+      suppressedClickRef.current = nextDragState.commentId;
+      event.preventDefault();
+      onMoveComment(nextDragState.commentId, nextDragState.position);
+    }
+  }
+
+  function cancelCommentDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (dragState?.pointerId === event.pointerId) {
+      setDragState(null);
+    }
+  }
+
   return (
     <div className="canvas-overlay-layer" aria-hidden="false">
       {comments.map((comment) => {
         const target = comment.targetElementId ? elementMap.get(comment.targetElementId) : null;
-        const center = target ? elementCenter(target) : { x: 24, y: 24 + comments.indexOf(comment) * 42 };
+        const center = dragState?.commentId === comment.id ? dragState.position : comment.position ?? (target ? elementCenter(target) : { x: 24, y: 24 + comments.indexOf(comment) * 42 });
         const left = center.x * content.viewport.zoom + content.viewport.panX;
         const top = center.y * content.viewport.zoom + content.viewport.panY;
+        const targetLabel = target ? `on ${target.type}` : comment.targetElementId ? `with missing target ${comment.targetElementId}` : "on general canvas";
+        const status = comment.resolved ? "Resolved" : "Open";
+        const excerpt = commentExcerpt(comment.content);
+        const descriptionId = `comment-pin-${comment.id}`;
+        const isDragging = dragState?.commentId === comment.id;
         return (
-          <button className={`canvas-comment-pin ${activeThreadId === comment.id ? "is-active" : ""} ${target || !comment.targetElementId ? "" : "is-missing-target"}`} key={comment.id} type="button" style={{ left, top }} aria-label={target ? `Open comment on ${target.type}` : comment.targetElementId ? `Open comment with missing target ${comment.targetElementId}` : "Open general canvas comment"} onClick={() => onOpenThread(comment.id)}>
+          <button
+            className={`canvas-comment-pin ${activeThreadId === comment.id ? "is-active" : ""} ${target || !comment.targetElementId ? "" : "is-missing-target"} ${isDragging ? "is-dragging" : ""}`}
+            key={comment.id}
+            type="button"
+            style={{ left, top }}
+            aria-label={`Open comment ${targetLabel}: ${status}. ${excerpt}`}
+            aria-describedby={descriptionId}
+            onPointerDown={(event) => startCommentDrag(event, comment.id, center)}
+            onPointerMove={updateCommentDrag}
+            onPointerUp={finishCommentDrag}
+            onPointerCancel={cancelCommentDrag}
+            onClick={() => {
+              if (suppressedClickRef.current === comment.id) {
+                suppressedClickRef.current = null;
+                return;
+              }
+              onOpenThread(comment.id);
+            }}
+          >
             <MessageSquare size={14} aria-hidden="true" />
+            <span className="canvas-comment-pin-preview" id={descriptionId} role="tooltip">
+              <strong>{status} comment</strong>
+              <span>{excerpt}</span>
+              <small>{target ? `Target ${target.type}` : comment.targetElementId ? `Missing target ${comment.targetElementId}` : "General canvas"}</small>
+            </span>
           </button>
         );
       })}
@@ -1015,7 +1379,12 @@ function CanvasOverlays({ content, comments, presence, selection, activeThreadId
   );
 }
 
-function InspectorPanel({ canvas, content, selectedElements, canEdit, validation, syncError, onClear, onDuplicate, onDelete, onLock, onUnlock, onFront, onBack, onGroup, onUngroup, onStyle, onGeometry, onData, onSelectElement }: {
+function commentExcerpt(content: string) {
+  const normalized = content.replace(/\s+/g, " ").trim();
+  return normalized.length > 96 ? `${normalized.slice(0, 93)}...` : normalized;
+}
+
+function InspectorPanel({ canvas, content, selectedElements, canEdit, validation, syncError, onClear, onDuplicate, onDelete, onLock, onUnlock, onFront, onBack, onGroup, onUngroup, onStyle, onGeometry, onData, onEndpoint, onSelectElement }: {
   canvas: CanvasResponse;
   content: CanvasContent;
   selectedElements: CanvasElement[];
@@ -1034,20 +1403,23 @@ function InspectorPanel({ canvas, content, selectedElements, canEdit, validation
   onStyle: (style: Parameters<typeof updateSelectionStyle>[2]) => void;
   onGeometry: (changes: Parameters<typeof updateSelectionGeometry>[2]) => void;
   onData: (data: Partial<CanvasElement["data"]>) => void;
+  onEndpoint: (handle: ConnectorEndpoint, changes: Partial<CanvasPoint>) => void;
   onSelectElement: (elementId: string) => void;
 }) {
   const selected = selectedElements.length === 1 ? selectedElements[0] : null;
+  const fillIsTransparent = isTransparentStyle(selected?.style.fill);
+  const strokeIsTransparent = isTransparentStyle(selected?.style.stroke);
+  const fillColor = colorInputValue(selected?.style.fill, "#ffffff");
+  const strokeColor = colorInputValue(selected?.style.stroke, "#4d7cfe");
+  const selectedLineMode = selected && isLineElement(selected) ? lineModeFromElement(selected) : null;
+  const endpointStart = selected && isLineElement(selected) ? pointFromData(selected.data.start, endpointFallback(selected, "start")) : null;
+  const endpointEnd = selected && isLineElement(selected) ? pointFromData(selected.data.end, endpointFallback(selected, "end")) : null;
+  const controlStart = selected && selectedLineMode === "curve" ? pointFromData(selected.data.controlStart, endpointFallback(selected, "controlStart")) : null;
+  const controlEnd = selected && selectedLineMode === "curve" ? pointFromData(selected.data.controlEnd, endpointFallback(selected, "controlEnd")) : null;
 
   return (
     <Panel className="canvas-panel-section" as="section">
       <span className="kicker">Inspector</span>
-      <div className="inspector-list">
-        <KeyValue label="Canvas id" value={canvas.id} />
-        <KeyValue label="Version" value={`${canvas.version} / lock ${canvas.lockVersion}`} />
-        <KeyValue label="Paper" value={`${content.metadata.width} x ${content.metadata.height}`} />
-        <KeyValue label="Permission" value={canEdit ? "edit allowed" : "read only"} />
-      </div>
-
       {syncError ? <ErrorState title={syncError.status === 409 ? "Conflict" : "Save failed"} copy={syncError.message} requestId={syncError.requestId} /> : null}
       {validation.length > 0 ? (
         <div className="validation-list" role="status">
@@ -1055,6 +1427,13 @@ function InspectorPanel({ canvas, content, selectedElements, canEdit, validation
           {validation.map((message) => <p key={message}>{message}</p>)}
         </div>
       ) : <StatusChip tone="healthy">content valid</StatusChip>}
+
+      <div className="inspector-list">
+        <KeyValue label="Canvas id" value={canvas.id} />
+        <KeyValue label="Version" value={`${canvas.version} / lock ${canvas.lockVersion}`} />
+        <KeyValue label="Grid" value={content.metadata.gridEnabled ? "visible" : "hidden"} />
+        <KeyValue label="Permission" value={canEdit ? "edit allowed" : "read only"} />
+      </div>
 
       {selectedElements.length === 0 ? (
         <div className="element-list" aria-label="Keyboard accessible element selection list">
@@ -1068,6 +1447,12 @@ function InspectorPanel({ canvas, content, selectedElements, canEdit, validation
             <h2>{selected.type}</h2>
             {selected.locked ? <Badge tone="warning">locked</Badge> : <Badge tone="info">selected</Badge>}
           </div>
+          {selected.type === "text" || selected.type === "rectangle" || selected.type === "circle" ? (
+            <label className="form-field">
+              <span className="field-label">Text data</span>
+              <Input defaultValue={String(selected.data.text ?? "")} disabled={!canEdit || selected.locked} onBlur={(event) => onData({ text: event.target.value })} />
+            </label>
+          ) : null}
           <div className="geometry-grid">
             <NumberField label="X" value={selected.x} disabled={!canEdit || selected.locked} onCommit={(value) => onGeometry({ x: value })} />
             <NumberField label="Y" value={selected.y} disabled={!canEdit || selected.locked} onCommit={(value) => onGeometry({ y: value })} />
@@ -1078,20 +1463,40 @@ function InspectorPanel({ canvas, content, selectedElements, canEdit, validation
           <div className="style-grid">
             <label>
               Fill
-              <input type="color" value={stringStyle(selected.style.fill, "#ffffff")} disabled={!canEdit || selected.locked} onChange={(event) => onStyle({ fill: event.target.value })} />
+              <input type="color" value={fillColor} disabled={!canEdit || selected.locked || fillIsTransparent} onChange={(event) => onStyle({ fill: event.target.value })} />
+            </label>
+            <label>
+              Transparent fill
+              <input type="checkbox" checked={fillIsTransparent} disabled={!canEdit || selected.locked} onChange={(event) => onStyle({ fill: event.target.checked ? "transparent" : fillColor })} />
             </label>
             <label>
               Stroke
-              <input type="color" value={stringStyle(selected.style.stroke, "#4d7cfe")} disabled={!canEdit || selected.locked} onChange={(event) => onStyle({ stroke: event.target.value })} />
+              <input type="color" value={strokeColor} disabled={!canEdit || selected.locked || strokeIsTransparent} onChange={(event) => onStyle({ stroke: event.target.value })} />
+            </label>
+            <label>
+              Transparent stroke
+              <input type="checkbox" checked={strokeIsTransparent} disabled={!canEdit || selected.locked} onChange={(event) => onStyle({ stroke: event.target.checked ? "transparent" : strokeColor })} />
             </label>
             <NumberField label="Stroke width" value={numberStyle(selected.style.strokeWidth, 2)} disabled={!canEdit || selected.locked} onCommit={(value) => onStyle({ strokeWidth: value })} />
             <NumberField label="Opacity" value={numberStyle(selected.style.opacity, 1)} disabled={!canEdit || selected.locked} step={0.1} onCommit={(value) => onStyle({ opacity: Math.max(0, Math.min(1, value)) })} />
           </div>
-          {selected.type === "text" || selected.type === "rectangle" || selected.type === "circle" || selected.type === "image" ? (
-            <label className="form-field">
-              <span className="field-label">Text data</span>
-              <Input defaultValue={String(selected.data.text ?? "")} disabled={!canEdit || selected.locked} onBlur={(event) => onData({ text: event.target.value })} />
-            </label>
+          {selected.type === "image" ? <ImageDataEditor selected={selected} canEdit={canEdit} onData={onData} /> : null}
+          {isLineElement(selected) ? <CurveDataEditor selected={selected} canEdit={canEdit} onData={onData} /> : null}
+          {endpointStart && endpointEnd ? (
+            <div className="connector-endpoint-grid" aria-label="Connector endpoint coordinates">
+              <NumberField label="Start X" value={endpointStart.x} disabled={!canEdit || selected.locked} onCommit={(value) => onEndpoint("start", { x: value })} />
+              <NumberField label="Start Y" value={endpointStart.y} disabled={!canEdit || selected.locked} onCommit={(value) => onEndpoint("start", { y: value })} />
+              <NumberField label="End X" value={endpointEnd.x} disabled={!canEdit || selected.locked} onCommit={(value) => onEndpoint("end", { x: value })} />
+              <NumberField label="End Y" value={endpointEnd.y} disabled={!canEdit || selected.locked} onCommit={(value) => onEndpoint("end", { y: value })} />
+              {controlStart && controlEnd ? (
+                <>
+                  <NumberField label="Control 1 X" value={controlStart.x} disabled={!canEdit || selected.locked} onCommit={(value) => onEndpoint("controlStart", { x: value })} />
+                  <NumberField label="Control 1 Y" value={controlStart.y} disabled={!canEdit || selected.locked} onCommit={(value) => onEndpoint("controlStart", { y: value })} />
+                  <NumberField label="Control 2 X" value={controlEnd.x} disabled={!canEdit || selected.locked} onCommit={(value) => onEndpoint("controlEnd", { x: value })} />
+                  <NumberField label="Control 2 Y" value={controlEnd.y} disabled={!canEdit || selected.locked} onCommit={(value) => onEndpoint("controlEnd", { y: value })} />
+                </>
+              ) : null}
+            </div>
           ) : null}
         </div>
       ) : null}
@@ -1110,6 +1515,138 @@ function InspectorPanel({ canvas, content, selectedElements, canEdit, validation
         <Button variant="secondary" icon={<X size={16} aria-hidden="true" />} disabled={!canEdit || selectedElements.length === 0} onClick={onUngroup}>Ungroup</Button>
       </div>
     </Panel>
+  );
+}
+
+function CurveDataEditor({ selected, canEdit, onData }: { selected: CanvasElement; canEdit: boolean; onData: (data: Partial<CanvasElement["data"]>) => void }) {
+  const disabled = !canEdit || selected.locked;
+  const value = typeof selected.data.curvePreset === "string" ? selected.data.curvePreset : selected.type === "curve" ? "dashed" : "solid";
+
+  return (
+    <label className="form-field">
+      <span className="field-label">Line preset</span>
+      <Select value={value} disabled={disabled} onChange={(event) => onData({ curvePreset: event.target.value })}>
+        {curvePresetOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </Select>
+    </label>
+  );
+}
+
+function ImageDataEditor({ selected, canEdit, onData }: { selected: CanvasElement; canEdit: boolean; onData: (data: Partial<CanvasElement["data"]>) => void }) {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const removedOnPointerRef = useRef(false);
+  const skipNextUrlCommitRef = useRef(false);
+  const [imageError, setImageError] = useState<string | null>(null);
+  const disabled = !canEdit || selected.locked;
+  const src = typeof selected.data.src === "string" ? selected.data.src : "";
+  const urlDefaultValue = src.startsWith("data:") ? "" : src;
+
+  async function handleImageFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    if (!supportedImageTypes.has(file.type)) {
+      setImageError("Use a PNG, JPEG, GIF, WebP, or SVG image.");
+      return;
+    }
+
+    if (file.size > maxInlineImageBytes) {
+      setImageError("Images must be 2 MB or smaller.");
+      return;
+    }
+
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      setImageError(null);
+      onData({ src: dataUrl, text: selected.data.text ?? file.name });
+    } catch {
+      setImageError("The image could not be read.");
+    }
+  }
+
+  function commitImageUrl(value: string) {
+    const nextUrl = value.trim();
+
+    if (skipNextUrlCommitRef.current) {
+      skipNextUrlCommitRef.current = false;
+      return;
+    }
+
+    if (nextUrl === urlDefaultValue) {
+      setImageError(null);
+      return;
+    }
+
+    if (!nextUrl) {
+      if (!src.startsWith("data:")) {
+        onData({ src: undefined });
+      }
+      setImageError(null);
+      return;
+    }
+
+    if (!isSupportedImageUrl(nextUrl)) {
+      setImageError("Use an http, https, or data:image URL.");
+      return;
+    }
+
+    setImageError(null);
+    onData({ src: nextUrl });
+  }
+
+  function removeImage(skipUrlCommit = false) {
+    skipNextUrlCommitRef.current = skipUrlCommit;
+    setImageError(null);
+    onData({ src: undefined });
+  }
+
+  return (
+    <div className="image-data-editor">
+      <input ref={fileInputRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" disabled={disabled} aria-label="Upload image file" onChange={(event) => void handleImageFile(event)} />
+      <div className="image-action-row">
+        <Button variant="secondary" icon={<Upload size={16} aria-hidden="true" />} disabled={disabled} onClick={() => fileInputRef.current?.click()}>
+          Upload/Replace image
+        </Button>
+        <Button variant="ghost" icon={<X size={16} aria-hidden="true" />} disabled={disabled || !src} onPointerDown={(event) => {
+          event.preventDefault();
+          removedOnPointerRef.current = true;
+          removeImage(true);
+        }} onMouseDown={(event) => {
+          event.preventDefault();
+          if (removedOnPointerRef.current) {
+            return;
+          }
+
+          removedOnPointerRef.current = true;
+          removeImage(true);
+        }} onClick={() => {
+          if (removedOnPointerRef.current) {
+            removedOnPointerRef.current = false;
+            window.setTimeout(() => {
+              skipNextUrlCommitRef.current = false;
+            }, 0);
+            return;
+          }
+
+          removeImage();
+        }}>
+          Remove image
+        </Button>
+      </div>
+      <label className="form-field">
+        <span className="field-label">Image URL</span>
+        <Input defaultValue={urlDefaultValue} disabled={disabled} placeholder={src.startsWith("data:") ? "Uploaded image stored in canvas" : "https://example.com/image.png"} onBlur={(event) => commitImageUrl(event.target.value)} />
+      </label>
+      <label className="form-field">
+        <span className="field-label">Image label</span>
+        <Input defaultValue={String(selected.data.text ?? "")} disabled={disabled} onBlur={(event) => onData({ text: event.target.value })} />
+      </label>
+      {imageError ? <p className="canvas-field-error" role="alert">{imageError}</p> : null}
+    </div>
   );
 }
 
@@ -1273,11 +1810,17 @@ function EmptyCanvasOverlay({ canEdit, onCreate }: { canEdit: boolean; onCreate:
 }
 
 function NumberField({ label, value, disabled, step = 1, onCommit }: { label: string; value: number; disabled?: boolean; step?: number; onCommit: (value: number) => void }) {
+  const [draft, setDraft] = useState(String(value));
+
+  useEffect(() => {
+    setDraft(String(value));
+  }, [value]);
+
   return (
     <label>
       {label}
-      <input type="number" step={step} defaultValue={value} disabled={disabled} onBlur={(event) => {
-        const next = Number(event.target.value);
+      <input type="number" step={step} value={draft} disabled={disabled} onChange={(event) => setDraft(event.target.value)} onBlur={() => {
+        const next = Number(draft);
         if (Number.isFinite(next) && next !== value) {
           onCommit(next);
         }
@@ -1293,6 +1836,31 @@ function KeyValue({ label, value }: { label: string; value: string }) {
       <strong>{value}</strong>
     </div>
   );
+}
+
+function centerElementInViewport(element: CanvasElement, content: CanvasContent, size: { width: number; height: number }): CanvasElement {
+  const viewportCenter = {
+    x: (size.width / 2 - content.viewport.panX) / content.viewport.zoom,
+    y: (size.height / 2 - content.viewport.panY) / content.viewport.zoom
+  };
+  const currentCenter = elementCenter(element);
+  const changes = translateCanvasElement(element, Math.round(viewportCenter.x - currentCenter.x), Math.round(viewportCenter.y - currentCenter.y));
+
+  return {
+    ...element,
+    ...changes,
+    data: {
+      ...element.data,
+      ...changes.data
+    }
+  };
+}
+
+function withViewport(content: CanvasContent, viewport: CanvasContent["viewport"]): CanvasContent {
+  return {
+    ...content,
+    viewport
+  };
 }
 
 function validateCanvas(content: CanvasContent, comments: CommentResponse[]) {
@@ -1317,6 +1885,28 @@ function validateCanvas(content: CanvasContent, comments: CommentResponse[]) {
   });
 
   return messages;
+}
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("Invalid image data"));
+    reader.onerror = () => reject(reader.error ?? new Error("Image read failed"));
+    reader.readAsDataURL(file);
+  });
+}
+
+function isSupportedImageUrl(value: string) {
+  if (value.startsWith("data:image/")) {
+    return true;
+  }
+
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 function loadStatusFromError(error: AppError): LoadStatus {
@@ -1360,8 +1950,38 @@ function stringStyle(value: unknown, fallback: string) {
   return typeof value === "string" && value.length > 0 ? value : fallback;
 }
 
+function colorInputValue(value: unknown, fallback: string) {
+  const color = stringStyle(value, fallback);
+  return /^#[\da-f]{6}$/i.test(color) ? color : fallback;
+}
+
+function endpointFallback(element: CanvasElement, handle: ConnectorEndpoint): CanvasPoint {
+  if (isLineElement(element)) {
+    return curvePointsFromElement(element)[handle];
+  }
+
+  return handle === "end" ? { x: element.x + element.width, y: element.y + element.height } : { x: element.x, y: element.y };
+}
+
+function isLineElement(element: CanvasElement) {
+  return element.type === "connector" || element.type === "arrow" || element.type === "curve";
+}
+
+function isTransparentStyle(value: unknown) {
+  return typeof value === "string" && value.toLowerCase() === "transparent";
+}
+
 function numberStyle(value: unknown, fallback: number) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function isEditableKeyboardTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  const tagName = target.tagName.toLowerCase();
+  return target.isContentEditable || tagName === "input" || tagName === "textarea" || tagName === "select";
 }
 
 function formatDate(value: string) {

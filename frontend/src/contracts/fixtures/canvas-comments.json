@@ -35,6 +35,10 @@
     "resolvedBy": null,
     "resolvedAt": null,
     "targetElementId": null,
+    "position": {
+      "x": 112,
+      "y": 96
+    },
     "createdAt": "2026-06-23T17:10:00Z",
     "updatedAt": "2026-06-23T17:10:00Z"
   },

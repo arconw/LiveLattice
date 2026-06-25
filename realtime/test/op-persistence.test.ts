@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { OpPersistenceService } from "../src/op-persistence";
-import { NoopKafkaProducer } from "../src/kafka-adapter";
+import { NoopKafkaProducer, type KafkaProducerAdapter, type KafkaSendBatch } from "../src/kafka-adapter";
 import type { BroadcastOp } from "../src/collaboration";
 
 function op(canvasId: string, version: number): BroadcastOp {
@@ -13,9 +13,29 @@ function op(canvasId: string, version: number): BroadcastOp {
   };
 }
 
+class FailingKafkaProducer implements KafkaProducerAdapter {
+  async send(_batch: KafkaSendBatch): Promise<void> {
+    throw new Error("kafka unavailable");
+  }
+
+  async close(): Promise<void> {}
+}
+
 test("Kafka disabled mode buffers nothing and flush is no-op", async () => {
   const ops = new OpPersistenceService(
     { enabled: false, brokers: [], canvasOpsTopic: "canvas.ops", flushBatchSize: 50, flushIntervalMs: 50 },
+    undefined
+  );
+  after(async () => ops.close());
+  await ops.push(op("c1", 1));
+  assert.equal(ops.bufferedCount(), 0);
+  const flushed = await ops.flush();
+  assert.equal(flushed, 0);
+});
+
+test("Kafka enabled without a producer buffers nothing", async () => {
+  const ops = new OpPersistenceService(
+    { enabled: true, brokers: ["localhost:9092"], canvasOpsTopic: "canvas.ops", flushBatchSize: 50, flushIntervalMs: 50 },
     undefined
   );
   after(async () => ops.close());
@@ -57,4 +77,22 @@ test("Kafka enabled auto-flushes when batch size reached", async () => {
   await ops.push(op("c1", 2));
   assert.equal(producer.sent.length, 1);
   assert.equal(ops.bufferedCount(), 0);
+});
+
+test("Kafka flush failures do not reject push and keep operations buffered", async () => {
+  const originalError = console.error;
+  console.error = () => {};
+  const ops = new OpPersistenceService(
+    { enabled: true, brokers: ["localhost:9092"], canvasOpsTopic: "canvas.ops", flushBatchSize: 1, flushIntervalMs: 1000 },
+    new FailingKafkaProducer()
+  );
+  try {
+    await ops.push(op("c1", 1));
+    assert.equal(ops.bufferedCount(), 1);
+    await assert.rejects(() => ops.flush(), /kafka unavailable/);
+    assert.equal(ops.bufferedCount(), 1);
+  } finally {
+    await ops.close();
+    console.error = originalError;
+  }
 });

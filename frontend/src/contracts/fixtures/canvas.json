@@ -103,6 +103,28 @@
         "groupId": null
       },
       {
+        "id": "el-curve",
+        "type": "connector",
+        "x": 210,
+        "y": 300,
+        "width": 260,
+        "height": 118,
+        "rotation": 0,
+        "style": { "fill": "transparent", "stroke": "#8b95a7", "strokeWidth": 2, "opacity": 1 },
+        "data": {
+          "start": { "x": 210, "y": 370 },
+          "controlStart": { "x": 284, "y": 300 },
+          "controlEnd": { "x": 392, "y": 418 },
+          "end": { "x": 470, "y": 342 },
+          "path": "M 210 370 C 284 300 392 418 470 342",
+          "lineMode": "curve",
+          "curvePreset": "dashed"
+        },
+        "zIndex": 8,
+        "locked": false,
+        "groupId": null
+      },
+      {
         "id": "el-freehand",
         "type": "freehand",
         "x": 540,
@@ -112,7 +134,7 @@
         "rotation": 0,
         "style": { "fill": "transparent", "stroke": "#ff5f8f", "strokeWidth": 4, "opacity": 1 },
         "data": { "points": [{ "x": 540, "y": 470 }, { "x": 584, "y": 430 }, { "x": 650, "y": 504 }, { "x": 740, "y": 452 }] },
-        "zIndex": 8,
+        "zIndex": 9,
         "locked": false,
         "groupId": null
       }

@@ -1,8 +1,8 @@
-import { Activity, Bell, Command, Grid3X3, Home, Import, LayoutDashboard, LogOut, Search, ShieldCheck, UserRound } from "lucide-react";
+import { Activity, Bell, Command, Grid3X3, Home, Import, LayoutDashboard, LogOut, Menu, Search, ShieldCheck, UserRound } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { AppError } from "../../contracts/api-client";
-import { primaryCanvasHref } from "../../contracts/fixture-ids";
+import { canvasListHref } from "../../contracts/fixture-ids";
 import { healthOverviewFixture, notificationsFixture } from "../../contracts/fixtures";
 import { getGatewayReadiness } from "../../contracts/health";
 import type { ServiceReadinessStatus } from "../../contracts/health";
@@ -24,13 +24,15 @@ export type ShellOutletContext = {
 
 const navItems = [
   { label: "Cockpit", to: (workspaceSlug: string) => `/w/${workspaceSlug}`, icon: Home, permission: "canvas:view" },
-  { label: "Canvas", to: primaryCanvasHref, icon: Grid3X3, permission: "canvas:view" },
+  { label: "Canvas", to: canvasListHref, icon: Grid3X3, permission: "canvas:view" },
   { label: "Dashboards", to: (workspaceSlug: string) => `/w/${workspaceSlug}/d`, icon: LayoutDashboard, permission: "dashboard:view" },
   { label: "Search", to: (workspaceSlug: string) => `/w/${workspaceSlug}/search`, icon: Search, permission: "canvas:view" },
   { label: "Jobs", to: (workspaceSlug: string) => `/w/${workspaceSlug}/jobs`, icon: Import, permission: "jobs:view" },
   { label: "Notify", to: (workspaceSlug: string) => `/w/${workspaceSlug}/notifications`, icon: Bell, permission: "canvas:view" },
   { label: "Audit", to: (workspaceSlug: string) => `/w/${workspaceSlug}/audit`, icon: ShieldCheck, permission: "audit:view" }
 ] satisfies Array<{ label: string; to: (workspaceSlug: string) => string; icon: typeof Home; permission: WorkspacePermission }>;
+
+const sidebarStorageKey = "livelattice:primary-sidebar";
 
 export function AppShell() {
   const params = useParams();
@@ -45,8 +47,16 @@ export function AppShell() {
   const [toasts, setToasts] = useState<string[]>([]);
   const [unreadCount, setUnreadCount] = useState(() => notificationsFixture.filter((notification) => notification.readAt === null).length);
   const [healthStatus, setHealthStatus] = useState<ServiceReadinessStatus>(healthOverviewFixture.status);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    if (typeof window === "undefined") {
+      return true;
+    }
+
+    return window.localStorage.getItem(sidebarStorageKey) !== "open";
+  });
   const commandButtonRef = useRef<HTMLButtonElement | null>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
+  const isCanvasWorkbench = /^\/w\/[^/]+\/c\/[^/]+/.test(location.pathname);
 
   const closePalette = useCallback(() => setPaletteOpen(false), []);
 
@@ -75,6 +85,10 @@ export function AppShell() {
   useEffect(() => {
     setPaletteOpen(false);
   }, [location.pathname]);
+
+  useEffect(() => {
+    window.localStorage.setItem(sidebarStorageKey, sidebarCollapsed ? "collapsed" : "open");
+  }, [sidebarCollapsed]);
 
   useEffect(() => {
     if (!activeWorkspace) {
@@ -143,9 +157,27 @@ export function AppShell() {
     pushToast,
     reload: workspaceState.reload
   });
+  const primaryNavLinks = (
+    <>
+      <NavLink className={({ isActive }) => `primary-nav-link ${isActive ? "is-active" : ""}`} to="/workspaces">
+        <Home aria-hidden="true" size={18} />
+        <span>Workspaces</span>
+      </NavLink>
+      {navItems.filter((item) => canRole(activeRole, item.permission)).map((item) => {
+        const Icon = item.icon;
+
+        return (
+          <NavLink className={({ isActive }) => `primary-nav-link ${isActive ? "is-active" : ""}`} end={item.label === "Cockpit"} key={item.label} to={item.to(selectedWorkspaceSlug)}>
+            <Icon aria-hidden="true" size={18} />
+            <span>{item.label}</span>
+          </NavLink>
+        );
+      })}
+    </>
+  );
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${isCanvasWorkbench ? "is-canvas-workbench" : ""} ${sidebarCollapsed ? "is-sidebar-collapsed" : "is-sidebar-open"}`}>
       <header className="topbar" aria-label="LiveLattice shell">
         <NavLink className="brand" to={selectedWorkspaceSlug ? `/w/${selectedWorkspaceSlug}` : "/workspaces"} aria-label="LiveLattice workspace home">
           <span className="brand-mark" aria-hidden="true" />
@@ -200,21 +232,14 @@ export function AppShell() {
       </header>
 
       <div className="shell-body">
-        <aside className="primary-nav" aria-label="Primary navigation">
-          <NavLink className={({ isActive }) => `primary-nav-link ${isActive ? "is-active" : ""}`} to="/workspaces">
-            <Home aria-hidden="true" size={18} />
-            <span>Workspaces</span>
-          </NavLink>
-          {navItems.filter((item) => canRole(activeRole, item.permission)).map((item) => {
-            const Icon = item.icon;
-
-            return (
-              <NavLink className={({ isActive }) => `primary-nav-link ${isActive ? "is-active" : ""}`} end={item.label === "Cockpit"} key={item.label} to={item.to(selectedWorkspaceSlug)}>
-                <Icon aria-hidden="true" size={18} />
-                <span>{item.label}</span>
-              </NavLink>
-            );
-          })}
+        <aside className={`primary-nav ${sidebarCollapsed ? "is-collapsed" : "is-expanded"}`} aria-label="Primary navigation">
+          <button className="sidebar-toggle" type="button" aria-label={sidebarCollapsed ? "Expand primary navigation" : "Collapse primary navigation"} aria-expanded={!sidebarCollapsed} onClick={() => setSidebarCollapsed((current) => !current)}>
+            <Menu aria-hidden="true" size={20} />
+            <span className="sidebar-toggle-text">Menu</span>
+          </button>
+          <nav className="primary-nav-list" aria-label="Workspace sections">
+            {primaryNavLinks}
+          </nav>
         </aside>
 
         <main className="route-surface">

@@ -3,7 +3,7 @@ import type { HealthOverview } from "./health";
 import type { ActivityJob } from "./jobs";
 import type { NotificationItem, NotificationPreferences } from "./notifications";
 import type { SearchResponse, SearchSuggestion } from "./search";
-import { coreFixtureIds, exportBoundaryCommentHref, primaryCanvasHref } from "./fixture-ids";
+import { canvasListHref, coreFixtureIds } from "./fixture-ids";
 
 export const searchResponseFixture: SearchResponse = {
   results: [
@@ -21,7 +21,7 @@ export const searchResponseFixture: SearchResponse = {
         title: ["Warehouse <em>flow</em>"],
         content: ["Gateway <em>export</em> boundary diagram with RBAC validation."]
       },
-      targetUrl: primaryCanvasHref("factory-floor")
+      targetUrl: canvasListHref("factory-floor")
     },
     {
       id: coreFixtureIds.commentExportBoundary,
@@ -36,7 +36,7 @@ export const searchResponseFixture: SearchResponse = {
       highlights: {
         content: ["Validate RBAC before <em>export</em> job creation."]
       },
-      targetUrl: exportBoundaryCommentHref("factory-floor")
+      targetUrl: canvasListHref("factory-floor")
     },
     {
       id: coreFixtureIds.dashboardOperations,
@@ -178,7 +178,7 @@ export const notificationsFixture: NotificationItem[] = [
     body: "Analytics asked you to validate the export connector.",
     readAt: null,
     createdAt: "2026-06-23T12:32:00Z",
-    target: { type: "canvas", id: coreFixtureIds.canvasIncidentMap, href: exportBoundaryCommentHref("factory-floor") }
+    target: { type: "canvas", id: coreFixtureIds.canvasIncidentMap, href: canvasListHref("factory-floor") }
   },
   {
     id: "notif-export",

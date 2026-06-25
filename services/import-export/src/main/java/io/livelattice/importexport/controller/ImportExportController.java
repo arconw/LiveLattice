@@ -100,6 +100,17 @@ public class ImportExportController {
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(new ImportResponse(null, jobId, "pending", "Large import queued for async processing"));
     }
 
+    @GetMapping("/import/jobs")
+    public ResponseEntity<Map<String, Object>> listImportJobs(@RequestParam(name = "workspace_id", required = false) String workspaceId,
+                                                              @RequestParam(name = "workspaceId", required = false) String workspaceIdCamel,
+                                                              @RequestParam(name = "status", required = false) String status,
+                                                              @RequestParam(name = "type", required = false) String type,
+                                                              @RequestParam(name = "page", defaultValue = "0") int page,
+                                                              @RequestParam(name = "size", defaultValue = "20") int size,
+                                                              @RequestHeader("x-auth-subject") String userSubject) {
+        return listJobs("import", firstNonBlank(workspaceId, workspaceIdCamel), status, type, page, size, userSubject);
+    }
+
     @GetMapping("/import/jobs/{jobId}")
     public ResponseEntity<JobResponse> getImportJob(@PathVariable UUID jobId,
                                                     @RequestHeader("x-auth-subject") String userSubject) {
@@ -135,6 +146,17 @@ public class ImportExportController {
         headers.setContentDispositionFormData("attachment", "canvas-" + canvasId + "." + format);
         auditEventPublisher.publishCanvasExport(workspaceId, canvasId, userSubject, exportMetadata("sync", format, null, content.length));
         return ResponseEntity.ok().headers(headers).body(output -> output.write(content));
+    }
+
+    @GetMapping("/export/jobs")
+    public ResponseEntity<Map<String, Object>> listExportJobs(@RequestParam(name = "workspace_id", required = false) String workspaceId,
+                                                              @RequestParam(name = "workspaceId", required = false) String workspaceIdCamel,
+                                                              @RequestParam(name = "status", required = false) String status,
+                                                              @RequestParam(name = "type", required = false) String type,
+                                                              @RequestParam(name = "page", defaultValue = "0") int page,
+                                                              @RequestParam(name = "size", defaultValue = "20") int size,
+                                                              @RequestHeader("x-auth-subject") String userSubject) {
+        return listJobs("export", firstNonBlank(workspaceId, workspaceIdCamel), status, type, page, size, userSubject);
     }
 
     @PostMapping("/export/dashboard/{dashboardId}")
@@ -314,5 +336,74 @@ public class ImportExportController {
             return new JobResponse(null, null, "not_found", 0, null, null, null, null);
         }
         return new JobResponse(state.jobId(), state.type(), state.status().name().toLowerCase(), state.progress(), state.result(), state.error(), state.createdAt(), state.updatedAt());
+    }
+
+    private ResponseEntity<Map<String, Object>> listJobs(String domain, String workspaceId, String status, String type, int page, int size, String userSubject) {
+        UUID workspace = optionalUuid(workspaceId);
+        JobStatus jobStatus = parseJobStatus(status);
+        List<JobState> jobs = jobService.listJobs(domain, type, jobStatus, workspace, page, size, userSubject);
+        long total = jobService.countJobs(domain, type, jobStatus, workspace, userSubject);
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("jobs", jobs.stream().map(state -> toJobMap(state, domain)).toList());
+        response.put("total", total);
+        return ResponseEntity.ok(response);
+    }
+
+    private Map<String, Object> toJobMap(JobState state, String domain) {
+        Map<String, Object> job = new LinkedHashMap<>();
+        job.put("id", state.jobId().toString());
+        job.put("jobId", state.jobId().toString());
+        job.put("domain", domain);
+        job.put("type", state.type());
+        job.put("workspaceId", state.workspaceId() != null ? state.workspaceId().toString() : null);
+        job.put("ownerId", state.userSubject());
+        job.put("status", listStatus(state.status()));
+        job.put("progress", state.progress());
+        job.put("retryCount", 0);
+        job.put("maxRetries", 3);
+        job.put("failureReason", state.error());
+        job.put("downloadUrl", null);
+        job.put("downloadExpiresAt", null);
+        job.put("createdAt", state.createdAt());
+        job.put("updatedAt", state.updatedAt());
+        job.put("startedAt", null);
+        job.put("completedAt", state.status() == JobStatus.COMPLETED ? state.updatedAt() : null);
+        return job;
+    }
+
+    private String listStatus(JobStatus status) {
+        return switch (status) {
+            case PENDING -> "queued";
+            case PROCESSING -> "running";
+            case COMPLETED -> "succeeded";
+            case FAILED -> "failed";
+        };
+    }
+
+    private String firstNonBlank(String first, String second) {
+        if (first != null && !first.isBlank()) {
+            return first;
+        }
+        return second;
+    }
+
+    private UUID optionalUuid(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return UUID.fromString(value);
+    }
+
+    private JobStatus parseJobStatus(String status) {
+        if (status == null || status.isBlank()) {
+            return null;
+        }
+        return switch (status.toLowerCase()) {
+            case "queued", "pending" -> JobStatus.PENDING;
+            case "running", "processing", "in_progress" -> JobStatus.PROCESSING;
+            case "succeeded", "success", "completed", "complete" -> JobStatus.COMPLETED;
+            case "failed" -> JobStatus.FAILED;
+            default -> throw new IllegalArgumentException("Unsupported job status: " + status);
+        };
     }
 }

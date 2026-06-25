@@ -1,7 +1,7 @@
 import { Activity, Bell, Boxes, FileSearch, Gauge, History, Import, Network } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { coreFixtureIds, primaryCanvasHref } from "../../contracts/fixture-ids";
+import { canvasListHref } from "../../contracts/fixture-ids";
 import { Button, StatusChip } from "../../design-system/components";
 import { usePrefersReducedMotion } from "./usePrefersReducedMotion";
 
@@ -32,7 +32,7 @@ const nodes: LatticeNode[] = [
     coordinate: "x120 y84",
     tone: "canvas",
     state: "Live editing",
-    href: primaryCanvasHref,
+    href: canvasListHref,
     icon: Boxes
   },
   {
@@ -142,8 +142,8 @@ export function LatticeCockpit({ onNotify }: { onNotify?: (message: string) => v
       <div className="canvas-field">
         <div className="canvas-topline">
           <div className="canvas-title">
-            <span className="coord">WS/{workspaceSlug} / canvas/{coreFixtureIds.canvasIncidentMap}</span>
-            <strong>Incident response lattice</strong>
+            <span className="coord">WS/{workspaceSlug} / canvases</span>
+            <strong>Workspace canvas lattice</strong>
           </div>
           <div className="layer-controls" aria-label="Canvas layer toggles">
             <button className="layer-toggle is-on layer-events" type="button" aria-pressed="true">

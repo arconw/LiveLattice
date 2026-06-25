@@ -4,7 +4,7 @@ import { dataSourceTypes, normalizeDashboardLayout, normalizeDataSourceResponse,
 import { jobStatuses } from "./jobs";
 import { digestFrequencies } from "./notifications";
 import { workspaceRoles } from "./auth";
-import { coreFixtureIds, dashboardWidgetFixtureIds, dataSourceFixtureIds } from "./fixture-ids";
+import { canvasListHref, coreFixtureIds, dashboardWidgetFixtureIds, dataSourceFixtureIds } from "./fixture-ids";
 import {
   dashboardDataFixture,
   dashboardFixtures,
@@ -121,11 +121,11 @@ describe("Stage 15F contract fixtures", () => {
     frontendContractFixtureMatrix.dashboards.data.widgets.forEach((widgetData) => expectUuid(widgetData.widgetId));
     searchResults.filter((result) => result.type === "canvas" || result.type === "comment" || result.type === "dashboard").forEach((result) => {
       expectUuid(result.id);
-      expect(result.targetUrl).toContain(result.type === "dashboard" ? coreFixtureIds.dashboardOperations : coreFixtureIds.canvasIncidentMap);
+      expect(result.targetUrl).toContain(result.type === "dashboard" ? coreFixtureIds.dashboardOperations : canvasListHref("factory-floor"));
     });
     notifications.filter((notification) => notification.target.type === "canvas").forEach((notification) => {
       expectUuid(notification.target.id);
-      expect(notification.target.href).toContain(coreFixtureIds.canvasIncidentMap);
+      expect(notification.target.href).toBe(canvasListHref("factory-floor"));
     });
     auditEvents.filter((event) => event.targetType === "canvas" || event.targetType === "workspace").forEach((event) => expectUuid(event.targetId));
   });

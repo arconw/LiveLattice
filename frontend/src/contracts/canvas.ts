@@ -1,7 +1,7 @@
 import { AppError } from "./api-client";
 import type { GatewayClient } from "./api-client";
 
-export const canvasElementTypes = ["rectangle", "circle", "text", "image", "connector", "arrow", "freehand"] as const;
+export const canvasElementTypes = ["rectangle", "circle", "text", "image", "connector", "arrow", "curve", "freehand"] as const;
 
 export type CanvasElementType = (typeof canvasElementTypes)[number];
 
@@ -28,6 +28,10 @@ export type CanvasElementData = {
   path?: string;
   start?: CanvasPoint;
   end?: CanvasPoint;
+  controlStart?: CanvasPoint;
+  controlEnd?: CanvasPoint;
+  curvePreset?: string;
+  lineMode?: string;
   [key: string]: unknown;
 };
 
@@ -107,6 +111,7 @@ export type CommentResponse = {
   resolvedBy: string | null;
   resolvedAt: string | null;
   targetElementId: string | null;
+  position?: CanvasPoint | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -115,11 +120,13 @@ export type CreateCommentPayload = {
   content: string;
   parentId?: string | null;
   targetElementId?: string | null;
+  position?: CanvasPoint | null;
 };
 
 export type UpdateCommentPayload = {
   content?: string;
   resolved?: boolean;
+  position?: CanvasPoint | null;
 };
 
 export type SnapshotResponse = {
@@ -248,16 +255,17 @@ export function normalizeCanvasElement(value: unknown, index = 0): CanvasElement
   if (!isRecord(value) || !isCanvasElementType(value.type)) {
     return null;
   }
+  const type = value.type === "curve" ? "connector" : value.type;
 
   return {
     id: stringValue(value.id, `element-${index + 1}`),
-    type: value.type,
+    type,
     x: numberValue(value.x, 0),
     y: numberValue(value.y, 0),
-    width: Math.max(1, numberValue(value.width, defaultSizeForType(value.type).width)),
-    height: Math.max(1, numberValue(value.height, defaultSizeForType(value.type).height)),
+    width: Math.max(1, numberValue(value.width, defaultSizeForType(type).width)),
+    height: Math.max(1, numberValue(value.height, defaultSizeForType(type).height)),
     rotation: numberValue(value.rotation, 0),
-    style: normalizeRecord(value.style, defaultStyleForType(value.type)),
+    style: normalizeRecord(value.style, defaultStyleForType(type)),
     data: normalizeElementData(value.data),
     zIndex: numberValue(value.zIndex, index + 1),
     locked: booleanValue(value.locked, false),
@@ -404,8 +412,12 @@ function defaultSizeForType(type: CanvasElementType) {
     return { width: 180, height: 72 };
   }
 
-  if (type === "connector" || type === "arrow" || type === "freehand") {
+  if (type === "arrow" || type === "freehand") {
     return { width: 180, height: 80 };
+  }
+
+  if (type === "connector" || type === "curve") {
+    return { width: 260, height: 148 };
   }
 
   return { width: 180, height: 96 };
@@ -416,8 +428,16 @@ function defaultStyleForType(type: CanvasElementType): CanvasElementStyle {
     return { fill: "transparent", stroke: "transparent", strokeWidth: 0, opacity: 1, fontFamily: "Inter", fontSize: 16, fontWeight: 700 };
   }
 
-  if (type === "connector" || type === "arrow" || type === "freehand") {
+  if (type === "arrow") {
+    return { fill: "transparent", stroke: "#273142", strokeWidth: 2, opacity: 1 };
+  }
+
+  if (type === "freehand") {
     return { fill: "transparent", stroke: "#273142", strokeWidth: 3, opacity: 1 };
+  }
+
+  if (type === "connector" || type === "curve") {
+    return { fill: "transparent", stroke: "#273142", strokeWidth: 2, opacity: 1 };
   }
 
   return { fill: "#ffffff", stroke: "#4d7cfe", strokeWidth: 2, opacity: 1 };

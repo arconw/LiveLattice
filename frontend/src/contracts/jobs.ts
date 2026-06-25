@@ -203,6 +203,10 @@ function normalizeJobStatus(value: unknown): JobStatus | null {
   }
 
   const normalized = value.toLowerCase();
+  if (normalized === "pending") {
+    return "queued";
+  }
+
   if (normalized === "success" || normalized === "completed" || normalized === "complete") {
     return "succeeded";
   }
